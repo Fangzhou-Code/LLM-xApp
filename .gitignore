@@ -1,0 +1,11 @@
+.env
+__pycache__/
+.pycache/
+outputs/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+
