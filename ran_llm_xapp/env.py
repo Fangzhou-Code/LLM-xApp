@@ -69,9 +69,23 @@ class SyntheticRANSliceEnv:
             else:
                 prb2 = max(0, prb2 - overflow)
 
-        # Ideal rates (Mbps) with a cap to model application/traffic ceiling.
-        ideal1 = min(self.cfg.cap1_mbps, self.cfg.eff1_mbps_per_prb * prb1)
-        ideal2 = min(self.cfg.cap2_mbps, self.cfg.eff2_mbps_per_prb * prb2)
+        def _effective_cap(sigma_mbps: float, hard_cap_mbps: Optional[float]) -> float:
+            # `hard_cap_mbps=None` means +inf, so the effective target is the demand itself.
+            if hard_cap_mbps is None:
+                return float(sigma_mbps)
+            return float(min(sigma_mbps, hard_cap_mbps))
+
+        # Ideal rates (Mbps), unified as:
+        #   eff_cap_s = min(sigma_s, cap_s_hard)  (cap_s_hard=None -> +inf)
+        #   ideal_s   = min(eff_cap_s, eff_s * prb_s)
+        #
+        # This avoids inconsistencies where a slice is "capped" below/above its demand in
+        # different parts of the simulation, and makes diminishing returns explicit when
+        # a slice already reaches its effective target.
+        eff_cap1 = _effective_cap(self.cfg.sigma1, self.cfg.cap1_hard_mbps)
+        eff_cap2 = _effective_cap(self.cfg.sigma2, self.cfg.cap2_hard_mbps)
+        ideal1 = min(eff_cap1, self.cfg.eff1_mbps_per_prb * prb1)
+        ideal2 = min(eff_cap2, self.cfg.eff2_mbps_per_prb * prb2)
 
         # Correlated channel perturbation (AR(1) additive noise, Mbps).
         self._ar1 = (self.cfg.ar_rho * self._ar1) + self._rng.gauss(0.0, self.cfg.ar_eps_std1)
@@ -84,9 +98,9 @@ class SyntheticRANSliceEnv:
         hat1 = max(0.0, ideal1 + self._ar1 + meas1)
         hat2 = max(0.0, ideal2 + self._ar2 + meas2)
 
-        # Final soft cap (avoid unbounded overshoot while allowing slight >cap due to noise).
-        hat1 = min(hat1, self.cfg.cap1_mbps + 2.0)
-        hat2 = min(hat2, self.cfg.cap2_mbps + 1.5)
+        # Final soft cap (avoid unbounded overshoot while allowing slight >target due to noise).
+        hat1 = min(hat1, eff_cap1 + 2.0)
+        hat2 = min(hat2, eff_cap2 + 1.5)
 
         return EnvStep(
             t=int(t),

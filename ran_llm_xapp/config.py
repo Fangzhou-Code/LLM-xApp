@@ -28,7 +28,7 @@ class ExperimentConfig:
     baseline_start_time: int = 200
 
     # PRB budget
-    R_total: int = 100
+    R_total: int = 128
     R_eff_pre: int = 128  # kept for backward-compat; effective budget is `R_total` by default.
 
     # Pre-slicing stage fixed PRB split (0~slice_init_time)
@@ -68,20 +68,25 @@ class ExperimentConfig:
     Tem_delta: float = 0.05
     in_context_top_n: int = 5
     in_context_n_examples: int = 3
-    llm_max_tokens: int = 80
+    llm_max_tokens: int = 150
     llm_timeout_s: int = 60
     llm_parse_retry: int = 1  # retry once with repair prompt
 
     # Synthetic environment model (tunable)
     eff1_mbps_per_prb: float = 0.3125  # 64 PRB -> 20 Mbps; 96 PRB -> 30 Mbps; 128 PRB -> 40 Mbps
     eff2_mbps_per_prb: float = 2.0
-    cap1_mbps: float = 45.0
-    cap2_mbps: float = 10.0
+    # Hard caps (Mbps). Effective target is min(demand, hard_cap); None means +inf.
+    cap1_hard_mbps: Optional[float] = 45.0
+    cap2_hard_mbps: Optional[float] = 10.0
     ar_rho: float = 0.9
     ar_eps_std1: float = 0.55
     ar_eps_std2: float = 0.22
     meas_std1: float = 0.15
     meas_std2: float = 0.10
+
+    # "Soft two-stage" waste penalty (only enabled for t >= baseline_start_time)
+    lambda_waste: float = 1.0
+    waste_eps: float = 1e-6
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)

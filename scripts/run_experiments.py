@@ -15,9 +15,9 @@ from ran_llm_xapp.metrics import (
     action_to_prbs,
     compute_time_averages,
     compute_utilities,
+    evaluate_V_k_soft,
     reliability_outage_fraction,
     system_average,
-    evaluate_V_k,
 )
 from ran_llm_xapp.plotting import plot_fig4_grid, plot_fig4_single, plot_fig5_bars, plot_fig5_sys_curve
 from ran_llm_xapp.policies import (
@@ -167,6 +167,10 @@ def run_single_method(
     u1_series: List[float] = []
     u2_series: List[float] = []
     slice2_active_series: List[bool] = []
+    prb2_min_est_series: List[float] = []
+    waste_series: List[float] = []
+    penalty_series: List[float] = []
+    V_k_soft_series: List[float] = []
 
     # Track slot state for V_k + OPRO history update.
     slot_k = 0
@@ -181,6 +185,10 @@ def run_single_method(
     for t in times:
         slice2_active = True
         slice2_active_series.append(True)
+        prb2_min_est_series.append(float("nan"))
+        waste_series.append(float("nan"))
+        penalty_series.append(float("nan"))
+        V_k_soft_series.append(float("nan"))
 
         # Reconfig slot: decide action at fixed interval boundaries.
         if (t == times[0]) or (t % cfg.reconfig_interval == 0):
@@ -206,6 +214,8 @@ def run_single_method(
                     sigma1=cfg.sigma1,
                     sigma2=cfg.sigma2,
                     slice2_active=True,
+                    current_prb1=int(current_prbs[0]),
+                    current_prb2=int(current_prbs[1]),
                     recent_hat_sigma1=win1,
                     recent_hat_sigma2=win2,
                 )
@@ -236,11 +246,22 @@ def run_single_method(
         # Slot end: compute V_k and record to policy history (OPRO).
         is_slot_end = ((t - slot_start_t) == (cfg.reconfig_interval - 1)) or (t == times[-1])
         if is_slot_end:
-            # V_k uses Eq.(8) evaluated at slot end time index t.
-            V = evaluate_V_k(cfg, t_k=t, hat_sigma1_series=hat1_series, hat_sigma2_series=hat2_series)
             win_start = max(0, t - cfg.Tw + 1)
             mean_hat1 = _mean(hat1_series[win_start : t + 1])
             mean_hat2 = _mean(hat2_series[win_start : t + 1]) if slice2_active else float("nan")
+            # Soft objective V_k_soft = V_k + penalty (penalty enabled only post-baseline).
+            soft = evaluate_V_k_soft(
+                cfg,
+                t_k=t,
+                hat_sigma1_series=hat1_series,
+                hat_sigma2_series=hat2_series,
+                mean_hat_sigma2=float(mean_hat2) if slice2_active else 0.0,
+                prb2=int(current_prbs[1]),
+            )
+            prb2_min_est_series[-1] = float(soft.prb2_min_est)
+            waste_series[-1] = float(soft.waste)
+            penalty_series[-1] = float(soft.penalty)
+            V_k_soft_series[-1] = float(soft.V_k_soft)
             policy.record_outcome(
                 SlotOutcome(
                     k=slot_k,
@@ -253,7 +274,11 @@ def run_single_method(
                     sigma2=cfg.sigma2,
                     mean_hat_sigma1=mean_hat1,
                     mean_hat_sigma2=mean_hat2,
-                    V=V,
+                    V_k=float(soft.V_k),
+                    prb2_min_est=int(soft.prb2_min_est),
+                    waste=int(soft.waste),
+                    penalty=float(soft.penalty),
+                    V_k_soft=float(soft.V_k_soft),
                 )
             )
 
@@ -281,6 +306,10 @@ def run_single_method(
         "theta2": theta2_series,
         "sys_u": sys_u_series,
         "sys_theta": sys_theta_series,
+        "prb2_min_est": prb2_min_est_series,
+        "waste": waste_series,
+        "penalty": penalty_series,
+        "V_k_soft": V_k_soft_series,
     }
 
 
@@ -371,6 +400,10 @@ def main() -> None:
                         "method": method_key,
                         "prb1": int(res["prb1"][i]),
                         "prb2": int(res["prb2"][i]),
+                        "prb2_min_est": float(res["prb2_min_est"][i]),
+                        "waste": float(res["waste"][i]),
+                        "penalty": float(res["penalty"][i]),
+                        "V_k_soft": float(res["V_k_soft"][i]),
                         "hat_sigma1": float(res["hat_sigma1"][i]),
                         "hat_sigma2": float(res["hat_sigma2"][i]),
                         "sigma1": float(res["sigma1"][i]),
@@ -390,6 +423,10 @@ def main() -> None:
                     "method",
                     "prb1",
                     "prb2",
+                    "prb2_min_est",
+                    "waste",
+                    "penalty",
+                    "V_k_soft",
                     "hat_sigma1",
                     "hat_sigma2",
                     "sigma1",

@@ -31,6 +31,14 @@ def get_g_function(cfg: ExperimentConfig) -> Callable[[float], float]:
     raise ValueError(f"Unknown g_name={cfg.g_name!r}")
 
 
+def effective_cap_mbps(sigma_mbps: float, hard_cap_mbps: Optional[float]) -> float:
+    """Return effective target cap: min(demand, hard_cap); hard_cap=None means +inf."""
+
+    if hard_cap_mbps is None:
+        return float(sigma_mbps)
+    return float(min(sigma_mbps, hard_cap_mbps))
+
+
 def action_to_prbs(action: Tuple[int, int], R_total: int) -> Tuple[int, int]:
     """Map action A_k=[a1,a2] to PRBs r_s^k (paper Eq.(7) + budget fixer).
 
@@ -190,6 +198,75 @@ def evaluate_V_k(
     x2 = (2.0 / cfg.Tw) * sum2
     V += (cfg.beta2 * g(x2)) + cfg.gamma2
     return V
+
+
+@dataclass(frozen=True)
+class SoftObjective:
+    """Soft objective for OPRO: V_k plus a UE2 PRB waste penalty (post-baseline)."""
+
+    V_k: float
+    prb2_min_est: int
+    waste: int
+    penalty: float
+    V_k_soft: float
+
+
+def compute_prb2_waste_penalty(
+    cfg: ExperimentConfig,
+    *,
+    mean_hat_sigma2: float,
+    prb2: int,
+) -> Tuple[int, int, float]:
+    """Compute (prb2_min_est, waste, penalty) for UE2 PRB over-allocation.
+
+    This is a *soft* penalty only; it is not a hard constraint.
+
+    Spec:
+      eff_cap2 = min(sigma2, cap2_hard)      (cap2_hard=None -> +inf)
+      eff2_est = mean_hat_sigma2 / max(prb2, 1)
+      prb2_min_est = ceil(eff_cap2 / max(eff2_est, eps))
+      waste = max(0, prb2 - prb2_min_est)
+      penalty = -lambda_waste * waste^2
+
+    Implementation note (stability):
+    - When UE2 is capped near its effective target, mean_hat_sigma2 stops growing with PRBs,
+      making eff2_est artificially small and prb2_min_est unrealistically large. Also, correlated
+      noise can temporarily make mean_hat_sigma2 appear too high, which would underestimate the
+      required PRBs. For a stable "soft" penalty in this synthetic environment, we use the
+      configured nominal efficiency `cfg.eff2_mbps_per_prb` as the efficiency estimate.
+    """
+
+    eff_cap2 = effective_cap_mbps(cfg.sigma2, cfg.cap2_hard_mbps)
+    prb2_i = max(0, int(prb2))
+    eff2_est = max(float(cfg.eff2_mbps_per_prb), float(cfg.waste_eps))
+    prb2_min_est = int(math.ceil(eff_cap2 / max(eff2_est, float(cfg.waste_eps)))) if eff_cap2 > 0 else 0
+    prb2_min_est = max(0, prb2_min_est)
+    waste = max(0, prb2_i - prb2_min_est)
+    penalty = -float(cfg.lambda_waste) * float(waste * waste)
+    return prb2_min_est, waste, penalty
+
+
+def evaluate_V_k_soft(
+    cfg: ExperimentConfig,
+    *,
+    t_k: int,
+    hat_sigma1_series: Sequence[float],
+    hat_sigma2_series: Sequence[float],
+    mean_hat_sigma2: float,
+    prb2: int,
+) -> SoftObjective:
+    """Compute V_k_soft = V_k + penalty (penalty enabled only post-baseline)."""
+
+    V_k = evaluate_V_k(cfg, t_k=t_k, hat_sigma1_series=hat_sigma1_series, hat_sigma2_series=hat_sigma2_series)
+    prb2_min_est, waste, penalty_full = compute_prb2_waste_penalty(cfg, mean_hat_sigma2=mean_hat_sigma2, prb2=prb2)
+    penalty = float(penalty_full) if int(t_k) >= int(cfg.baseline_start_time) else 0.0
+    return SoftObjective(
+        V_k=float(V_k),
+        prb2_min_est=int(prb2_min_est),
+        waste=int(waste),
+        penalty=float(penalty),
+        V_k_soft=float(V_k + penalty),
+    )
 
 
 @dataclass(frozen=True)

@@ -61,8 +61,6 @@ class DeepSeekClient(LLMClient):
             ],
             "temperature": float(temperature),
             "max_tokens": int(max_tokens),
-            # DeepSeek is largely OpenAI-compatible; if unsupported, it may ignore this.
-            "response_format": {"type": "json_object"},
         }
         if seed is not None:
             body["seed"] = int(seed)

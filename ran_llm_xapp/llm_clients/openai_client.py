@@ -55,8 +55,6 @@ class OpenAIClient(LLMClient):
             ],
             "temperature": float(temperature),
             "max_tokens": int(max_tokens),
-            # JSON mode (supported by many OpenAI chat models).
-            "response_format": {"type": "json_object"},
         }
         if seed is not None:
             body["seed"] = int(seed)

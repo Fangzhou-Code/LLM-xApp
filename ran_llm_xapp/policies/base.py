@@ -13,6 +13,9 @@ class Observation:
     sigma1: float
     sigma2: float
     slice2_active: bool
+    # Current allocation (PRBs) applied in the environment *before* taking the next action.
+    current_prb1: int
+    current_prb2: int
     recent_hat_sigma1: Sequence[float]
     recent_hat_sigma2: Sequence[float]
 
@@ -31,7 +34,12 @@ class SlotOutcome:
     sigma2: float
     mean_hat_sigma1: float
     mean_hat_sigma2: float
-    V: float
+    # Raw Eq.(8) score and soft-augmented score used for OPRO history ranking.
+    V_k: float
+    prb2_min_est: int
+    waste: int
+    penalty: float
+    V_k_soft: float
 
 
 def clamp_action(a1: int, a2: int) -> Tuple[int, int]:
@@ -57,4 +65,3 @@ class Policy(abc.ABC):
 
         _ = outcome
         return None
-

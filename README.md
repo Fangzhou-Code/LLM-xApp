@@ -86,7 +86,7 @@ export DEEPSEEK_API_KEY="..."
 ## 输出文件说明
 
 每次运行输出到 `--out` 指定目录，至少包含：
-- `timeseries_<method>.csv`：包含 `t, method, prb1, prb2, hat_sigma1, hat_sigma2, sigma1, sigma2, u1, u2, theta1, theta2, sys_u, sys_theta`
+- `timeseries_<method>.csv`：包含 `t, method, prb1, prb2, prb2_min_est, waste, penalty, V_k_soft, hat_sigma1, hat_sigma2, sigma1, sigma2, u1, u2, theta1, theta2, sys_u, sys_theta`
   - 当使用 `--llm-runs` 跑多个 LLM 时，会额外生成 `timeseries_llm_<provider>_<model>.csv`
 - 图4：
   - 每个方法/变体都会单独输出 `fig4_<method>.png`
