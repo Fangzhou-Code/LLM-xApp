@@ -76,6 +76,13 @@ export DEEPSEEK_API_KEY="..."
 
 无 key 或 base_url 时仍可运行：若你选择 `--provider openai|deepseek` 但未提供对应的 key/base_url，程序会提示并自动退化到 `stub`（启发式 LLM），保证可跑通并出图。
 
+若你在 macOS 上看到类似 `SSL: UNEXPECTED_EOF_WHILE_READING` 的报错，常见原因是你当前的 `python3` 来自 CommandLineTools（SSL 后端是 LibreSSL，兼容性较差）。建议改用 Homebrew 或 python.org 的 Python（SSL 后端是 OpenSSL）再运行。
+
+如果你的 Python SSL 后端已经是 OpenSSL 仍然报 `UNEXPECTED_EOF_WHILE_READING`，通常是网关/代理在 TLS 1.3 上不兼容导致连接被提前断开。可尝试在 `.env` 里加一行强制 TLS 1.2：
+- DeepSeek：`DEEPSEEK_TLS_FORCE_TLS12=1`
+- OpenAI：`OPENAI_TLS_FORCE_TLS12=1`
+- 或全局：`LLM_TLS_FORCE_TLS12=1`
+
 ## 输出文件说明
 
 每次运行输出到 `--out` 指定目录，至少包含：
@@ -83,8 +90,7 @@ export DEEPSEEK_API_KEY="..."
   - 当使用 `--llm-runs` 跑多个 LLM 时，会额外生成 `timeseries_llm_<provider>_<model>.csv`
 - 图4：
   - 每个方法/变体都会单独输出 `fig4_<method>.png`
-  - 若同时具备 `random/equal/proportional` 且至少跑了 1 个 `llm` 变体：输出 `fig4.png`（2x2：random/equal/proportional/第一个 llm 变体）
-  - 若跑了多个 llm 变体：额外输出 `fig4_grid_<llm_variant>.png`（每个 llm 变体各一张 2x2 grid）
+  - 额外输出 `fig4.png`：把本次运行产生的所有方法/变体放到**同一张组合图**（支持多个 llm 变体，子图数量会随之增加）
 - 图5：
   - `fig5a_sys_utility.png`
   - `fig5b_sys_reliability.png`

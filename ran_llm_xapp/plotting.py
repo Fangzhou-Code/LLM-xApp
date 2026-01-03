@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Mapping, Sequence
 
 from .config import ExperimentConfig
@@ -13,19 +14,50 @@ def plot_fig4_grid(
     methods_order: Sequence[str],
     out_path: str,
 ) -> None:
-    """Plot Fig.4-style 2x2 grid: throughput curves for each method."""
+    """Plot Fig.4-style grid (variable size): throughput curves for each method/variant."""
 
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharex=True, sharey=True)
-    axes = axes.flatten()
-    panel_labels = ["(a)", "(b)", "(c)", "(d)"]
+    n_panels = len(methods_order)
+    if n_panels <= 0:
+        raise ValueError("methods_order must contain at least one method.")
+
+    # Make a single combined figure that can include multiple LLM variants.
+    if n_panels <= 4:
+        ncols = 2
+    elif n_panels <= 6:
+        ncols = 3
+    elif n_panels <= 12:
+        ncols = 4
+    else:
+        ncols = 5
+    nrows = int(math.ceil(n_panels / ncols))
+
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(4.8 * ncols, 3.2 * nrows),
+        sharex=True,
+        sharey=True,
+    )
+    if isinstance(axes, list):
+        flat_axes = axes
+    else:
+        try:
+            flat_axes = axes.flatten().tolist()
+        except Exception:
+            flat_axes = [axes]
+
+    def _panel_label(i: int) -> str:
+        if 0 <= i < 26:
+            return f"({chr(ord('a') + i)})"
+        return f"({i + 1})"
 
     for i, method in enumerate(methods_order):
-        ax = axes[i]
+        ax = flat_axes[i]
         res = results_by_method[method]
         t = list(res["t"])
         ue1 = list(res["hat_sigma1"])
@@ -36,14 +68,18 @@ def plot_fig4_grid(
         ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
         alloc_start_t = cfg.slice_init_time if method == "equal" else cfg.baseline_start_time
         ax.axvline(alloc_start_t, color="k", linestyle=":", linewidth=1.0)
-        ax.set_title(f"{panel_labels[i]} {method}")
+        ax.set_title(f"{_panel_label(i)} {method}")
         ax.grid(True, alpha=0.3)
-        if i % 2 == 0:
+        if (i % ncols) == 0:
             ax.set_ylabel("Measured data rate (Mbps)")
-        if i >= 2:
+        if i >= (ncols * (nrows - 1)):
             ax.set_xlabel("Time (s)")
 
-    handles, labels = axes[0].get_legend_handles_labels()
+    # Turn off any unused axes.
+    for j in range(n_panels, len(flat_axes)):
+        flat_axes[j].axis("off")
+
+    handles, labels = flat_axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=2, frameon=False)
     fig.suptitle(
         "Fig.4-style Measured Data Rate (UE1 vs UE2)\n"

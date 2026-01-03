@@ -442,23 +442,14 @@ def main() -> None:
             out_path=str(out_dir / f"fig4_{k}.png"),
         )
 
-    # Also write a canonical 2x2 Fig4 grid when baselines + at least one llm variant exist.
-    if baseline_keys == ["random", "equal", "proportional"] and llm_keys:
-        canonical_llm = llm_keys[0]
+    # Write a single combined Fig4 grid containing all produced methods/variants.
+    if methods_order:
         plot_fig4_grid(
             cfg=cfg,
             results_by_method=results_by_method,
-            methods_order=["random", "equal", "proportional", canonical_llm],
+            methods_order=methods_order,
             out_path=str(out_dir / "fig4.png"),
         )
-        # If multiple llm variants are requested, produce one grid per llm variant.
-        for k in llm_keys:
-            plot_fig4_grid(
-                cfg=cfg,
-                results_by_method=results_by_method,
-                methods_order=["random", "equal", "proportional", k],
-                out_path=str(out_dir / f"fig4_grid_{k}.png"),
-            )
 
     plot_fig5_sys_curve(
         cfg=cfg,

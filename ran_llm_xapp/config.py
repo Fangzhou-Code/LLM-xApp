@@ -28,7 +28,7 @@ class ExperimentConfig:
     baseline_start_time: int = 200
 
     # PRB budget
-    R_total: int = 128
+    R_total: int = 100
     R_eff_pre: int = 128  # kept for backward-compat; effective budget is `R_total` by default.
 
     # Pre-slicing stage fixed PRB split (0~slice_init_time)
