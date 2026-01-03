@@ -68,23 +68,23 @@ class StubLLMClient(LLMClient):
             action = {"a1": 128, "a2": 1}
             return json.dumps(action)
 
-        # Heuristic: keep UE2 comfortably above its utility threshold (~8.5 Mbps),
-        # allocate the rest to UE1, with mild temperature-scaled jitter.
-        desired_prb2 = 16
-        if ue2_mean < 9.0:
-            desired_prb2 = 24
-        elif ue2_mean > (sigma2 + 0.3):
-            desired_prb2 = 12
+        # Heuristic: keep UE2 near its demand (~10 Mbps) with a small PRB budget
+        # (the env caps UE2 near 10 Mbps), allocate the remaining PRBs to UE1.
+        desired_prb2 = 7
+        if ue2_mean < 9.2:
+            desired_prb2 = 10
+        elif ue2_mean > (sigma2 + 0.4):
+            desired_prb2 = 6
 
         # If UE1 is far below its demand, push more toward UE1 by shrinking PRB2.
-        if ue1_mean < (0.85 * sigma1):
-            desired_prb2 = max(10, desired_prb2 - 2)
+        if ue1_mean < (0.90 * sigma1):
+            desired_prb2 = max(5, desired_prb2 - 1)
 
         # Temperature-scaled exploration (integer jitter). Keep it mild so curves
         # remain paper-like (llm is relatively stable vs random).
         jitter = int(round(local_rng.gauss(0.0, max(0.5, 2.5 * float(temperature)))))
         # Keep UE2 minimally protected to avoid large reliability degradation.
-        desired_prb2 = int(max(12, min(40, desired_prb2 + jitter)))
+        desired_prb2 = int(max(5, min(40, desired_prb2 + jitter)))
         desired_prb1 = int(max(1, 128 - desired_prb2))
 
         a1 = max(1, min(128, desired_prb1))

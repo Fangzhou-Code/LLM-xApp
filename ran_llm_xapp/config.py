@@ -12,11 +12,13 @@ class ExperimentConfig:
     """Experiment configuration (defaults are 'out-of-the-box' runnable).
 
     Notes on defaults (chosen to match the paper-like shapes):
-    - Before slice init (t < 100s), we clamp effective PRB budget to `R_eff_pre`
-      to simulate reduced early bandwidth and keep UE1 around ~30 Mbps.
-    - UE2 uses a higher per-PRB efficiency with an application-layer cap near 10 Mbps,
-      so that proportional/llm can reduce UE2 PRBs while still meeting its demand most
-      of the time (making the utility/reliability comparison meaningful).
+    - UE1/UE2 exist for the whole time horizon t∈[0,T_end].
+    - The three-stage allocation timeline is implemented in the runner:
+        (i)  0~slice_init_time: fixed PRB split (defaults 96/32) → ~30/~10 Mbps
+        (ii) slice_init_time~baseline_start_time: evenly split (64/64) → ~20/~10 Mbps
+        (iii) baseline_start_time~end: method policy takes effect (equal/proportional/random/llm)
+    - UE2 has a tight application-layer cap (cap2≈10 Mbps) and high per-PRB efficiency,
+      so that llm/proportional can allocate fewer PRBs to UE2 while still keeping it near 10 Mbps.
     """
 
     # Time
@@ -27,7 +29,11 @@ class ExperimentConfig:
 
     # PRB budget
     R_total: int = 128
-    R_eff_pre: int = 96
+    R_eff_pre: int = 128  # kept for backward-compat; effective budget is `R_total` by default.
+
+    # Pre-slicing stage fixed PRB split (0~slice_init_time)
+    pre_slice_prb1: int = 96
+    pre_slice_prb2: int = 32
 
     # Requested rates (Mbps)
     sigma1: float = 40.0
@@ -67,15 +73,15 @@ class ExperimentConfig:
     llm_parse_retry: int = 1  # retry once with repair prompt
 
     # Synthetic environment model (tunable)
-    eff1_mbps_per_prb: float = 0.33
-    eff2_mbps_per_prb: float = 0.80
+    eff1_mbps_per_prb: float = 0.3125  # 64 PRB -> 20 Mbps; 96 PRB -> 30 Mbps; 128 PRB -> 40 Mbps
+    eff2_mbps_per_prb: float = 2.0
     cap1_mbps: float = 45.0
-    cap2_mbps: float = 10.5
+    cap2_mbps: float = 10.0
     ar_rho: float = 0.9
     ar_eps_std1: float = 0.55
-    ar_eps_std2: float = 0.25
+    ar_eps_std2: float = 0.22
     meas_std1: float = 0.15
-    meas_std2: float = 0.12
+    meas_std2: float = 0.10
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -147,4 +153,3 @@ def save_config_prefer_yaml(config: ExperimentConfig, out_dir: str | Path) -> Pa
     p = out_dir / "config_used.json"
     p.write_text(json.dumps(config.to_dict(), indent=2, sort_keys=False), encoding="utf-8")
     return p
-

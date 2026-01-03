@@ -29,14 +29,13 @@ def plot_fig4_grid(
         res = results_by_method[method]
         t = list(res["t"])
         ue1 = list(res["hat_sigma1"])
-        ue2_raw = list(res["hat_sigma2"])
-        # UE2 does not exist before slice init; avoid drawing a misleading flat line at 0.
-        ue2 = [ue2_raw[j] if t[j] >= cfg.slice_init_time else float("nan") for j in range(len(t))]
+        ue2 = list(res["hat_sigma2"])
 
         ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5)
         ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5)
         ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
-        ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
+        alloc_start_t = cfg.slice_init_time if method == "equal" else cfg.baseline_start_time
+        ax.axvline(alloc_start_t, color="k", linestyle=":", linewidth=1.0)
         ax.set_title(f"{panel_labels[i]} {method}")
         ax.grid(True, alpha=0.3)
         if i % 2 == 0:
@@ -46,7 +45,10 @@ def plot_fig4_grid(
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=2, frameon=False)
-    fig.suptitle("Fig.4-style Measured Data Rate (UE1 vs UE2)\n-- slice init @100s, : baseline start @200s")
+    fig.suptitle(
+        "Fig.4-style Measured Data Rate (UE1 vs UE2)\n"
+        "-- slice init @100s, : allocation starts (equal@100s, others@200s)"
+    )
     fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
@@ -68,14 +70,14 @@ def plot_fig4_single(
 
     t = list(result["t"])
     ue1 = list(result["hat_sigma1"])
-    ue2_raw = list(result["hat_sigma2"])
-    ue2 = [ue2_raw[j] if t[j] >= cfg.slice_init_time else float("nan") for j in range(len(t))]
+    ue2 = list(result["hat_sigma2"])
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 4))
     ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5)
     ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5)
     ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0, label="slice init")
-    ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0, label="baseline start")
+    alloc_start_t = cfg.slice_init_time if method == "equal" else cfg.baseline_start_time
+    ax.axvline(alloc_start_t, color="k", linestyle=":", linewidth=1.0, label="allocation starts")
     ax.set_title(method)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Measured data rate (Mbps)")

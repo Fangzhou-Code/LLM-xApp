@@ -128,13 +128,13 @@ def _build_policy(
     if method == "llm":
         if llm_provider == "openai":
             client = OpenAIClient()
-            if not client.api_key:
-                logger.warning("OPENAI_API_KEY missing; falling back to stub provider.")
+            if (not client.api_key) or (not getattr(client, "base_url", None)):
+                logger.warning("OPENAI_API_KEY/OPENAI_BASE_URL missing; falling back to stub provider.")
                 client = StubLLMClient(seed=seed + 222)
         elif llm_provider == "deepseek":
             client = DeepSeekClient()
-            if not client.api_key:
-                logger.warning("DEEPSEEK_API_KEY missing; falling back to stub provider.")
+            if (not client.api_key) or (not getattr(client, "base_url", None)):
+                logger.warning("DEEPSEEK_API_KEY/DEEPSEEK_BASE_URL missing; falling back to stub provider.")
                 client = StubLLMClient(seed=seed + 333)
         else:
             client = StubLLMClient(seed=seed + 444)
@@ -154,7 +154,6 @@ def run_single_method(
     env = SyntheticRANSliceEnv(cfg, seed=seed)
     env.reset()
 
-    warmup = EqualPolicy()
     policy = _build_policy(method, cfg=cfg, seed=seed, llm_provider=llm_provider, llm_model=llm_model, cache=cache)
     if hasattr(policy, "reset"):
         policy.reset()
@@ -173,40 +172,45 @@ def run_single_method(
     slot_k = 0
     slot_start_t = times[0]
     current_action: Tuple[int, int] = (128, 1)
-    current_prbs: Tuple[int, int] = (cfg.R_eff_pre, 0)
+    current_prbs: Tuple[int, int] = (cfg.pre_slice_prb1, cfg.pre_slice_prb2)
 
     def _recent_window(series: Sequence[float], t: int, window: int) -> List[float]:
         start = max(0, t - window + 1)
         return list(series[start : t + 1])
 
     for t in times:
-        slice2_active = t >= cfg.slice_init_time
-        slice2_active_series.append(slice2_active)
+        slice2_active = True
+        slice2_active_series.append(True)
 
         # Reconfig slot: decide action at fixed interval boundaries.
         if (t == times[0]) or (t % cfg.reconfig_interval == 0):
-            if t < cfg.baseline_start_time:
-                chosen_policy = warmup
-            else:
-                chosen_policy = policy
-
-            # Observation uses recent *measured* window (trailing, not centered).
-            win1 = _recent_window(hat1_series, len(hat1_series) - 1, cfg.Tw) if hat1_series else []
-            win2 = _recent_window(hat2_series, len(hat2_series) - 1, cfg.Tw) if hat2_series else []
-            obs = Observation(
-                t=t,
-                sigma1=cfg.sigma1,
-                sigma2=cfg.sigma2,
-                slice2_active=slice2_active,
-                recent_hat_sigma1=win1,
-                recent_hat_sigma2=win2,
-            )
-
-            current_action = chosen_policy.select_action(obs)
-            if slice2_active:
+            # Three-stage allocation timeline:
+            # (i)  0~slice_init_time: fixed PRB split to match ~30/~10 Mbps
+            # (ii) slice_init_time~baseline_start_time: init evenly split (64/64)
+            # (iii) baseline_start_time~end: method policy takes effect (equal starts at slice init)
+            if t < cfg.slice_init_time:
+                current_action = (int(cfg.pre_slice_prb1), int(cfg.pre_slice_prb2))
+                current_prbs = (int(cfg.pre_slice_prb1), int(cfg.pre_slice_prb2))
+            elif t < cfg.baseline_start_time:
+                current_action = (64, 64)
+                current_prbs = action_to_prbs(current_action, cfg.R_total)
+            elif method == "equal":
+                current_action = (64, 64)
                 current_prbs = action_to_prbs(current_action, cfg.R_total)
             else:
-                current_prbs = (cfg.R_eff_pre, 0)
+                # Observation uses recent *measured* window (trailing, not centered).
+                win1 = _recent_window(hat1_series, len(hat1_series) - 1, cfg.Tw) if hat1_series else []
+                win2 = _recent_window(hat2_series, len(hat2_series) - 1, cfg.Tw) if hat2_series else []
+                obs = Observation(
+                    t=t,
+                    sigma1=cfg.sigma1,
+                    sigma2=cfg.sigma2,
+                    slice2_active=True,
+                    recent_hat_sigma1=win1,
+                    recent_hat_sigma2=win2,
+                )
+                current_action = policy.select_action(obs)
+                current_prbs = action_to_prbs(current_action, cfg.R_total)
 
             slot_start_t = t
             slot_k = int(t // cfg.reconfig_interval)
@@ -224,7 +228,7 @@ def run_single_method(
             hat_sigma2=step.hat_sigma2,
             sigma1=cfg.sigma1,
             sigma2=cfg.sigma2,
-            slice2_active=step.slice2_active,
+            slice2_active=True,
         )
         u1_series.append(u1)
         u2_series.append(u2)

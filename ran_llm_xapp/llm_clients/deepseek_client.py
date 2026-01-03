@@ -19,7 +19,8 @@ class DeepSeekClient(LLMClient):
         base_url: Optional[str] = None,
     ) -> None:
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
-        self.base_url = (base_url or os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1").rstrip("/")
+        raw_base_url = base_url or os.getenv("DEEPSEEK_BASE_URL")
+        self.base_url = raw_base_url.rstrip("/") if raw_base_url else None
 
     def complete(
         self,
@@ -33,6 +34,8 @@ class DeepSeekClient(LLMClient):
     ) -> str:
         if not self.api_key:
             raise RuntimeError("DEEPSEEK_API_KEY is not set.")
+        if not self.base_url:
+            raise RuntimeError("DEEPSEEK_BASE_URL is not set.")
         url = f"{self.base_url}/chat/completions"
         body = {
             "model": model,

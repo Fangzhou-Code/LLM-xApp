@@ -167,7 +167,7 @@ def evaluate_V_k(
     Notes:
     - We interpret `t_k` as the *slot end* time index where Eq.(8) is evaluated.
     - Window boundary is truncated to valid indices.
-    - S2 is included only when active at time t_k.
+    - This synthetic setup treats both slices as always present (S1+S2).
     """
 
     g = get_g_function(cfg)
@@ -178,20 +178,17 @@ def evaluate_V_k(
     # Requested rates at time t_k
     sigma1_tk = cfg.sigma1
     sigma2_tk = cfg.sigma2
-    slice2_active = t_k >= cfg.slice_init_time
 
     sum1 = 0.0
     sum2 = 0.0
     for t in range(start, end + 1):
         sum1 += hat_sigma1_series[t] - sigma1_tk
-        if slice2_active:
-            sum2 += hat_sigma2_series[t] - sigma2_tk
+        sum2 += hat_sigma2_series[t] - sigma2_tk
 
     x1 = (2.0 / cfg.Tw) * sum1
     V = (cfg.beta1 * g(x1)) + cfg.gamma1
-    if slice2_active:
-        x2 = (2.0 / cfg.Tw) * sum2
-        V += (cfg.beta2 * g(x2)) + cfg.gamma2
+    x2 = (2.0 / cfg.Tw) * sum2
+    V += (cfg.beta2 * g(x2)) + cfg.gamma2
     return V
 
 
@@ -232,4 +229,3 @@ def compute_time_averages(
         avg_theta2=_mean_ignore_nan(theta2[start_idx:]),
         avg_sys_theta=_mean_ignore_nan(sys_theta[start_idx:]),
     )
-

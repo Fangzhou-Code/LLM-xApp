@@ -136,6 +136,47 @@ def load_dotenv(dotenv_path: str | Path | None = None, *, override: bool = False
     if path is None:
         return None
 
+    def _parse_value(raw: str) -> str:
+        """Parse a dotenv value, supporting quotes and inline comments.
+
+        Examples:
+        - KEY=value
+        - KEY=value # comment
+        - KEY="value" # comment
+        - KEY='value with # inside'
+        """
+
+        s = raw.strip()
+        if not s:
+            return ""
+
+        if s[0] in {"'", '"'}:
+            quote = s[0]
+            out_chars: list[str] = []
+            escaped = False
+            for i in range(1, len(s)):
+                ch = s[i]
+                if escaped:
+                    out_chars.append(ch)
+                    escaped = False
+                    continue
+                if ch == "\\":
+                    escaped = True
+                    continue
+                if ch == quote:
+                    # Ignore anything after the closing quote (e.g., inline comments).
+                    return "".join(out_chars)
+                out_chars.append(ch)
+            # Unclosed quote: fall back to best-effort unquoted parsing below.
+            s = s[1:]
+
+        # Unquoted value: strip inline comment if it starts after whitespace.
+        for i, ch in enumerate(s):
+            if ch == "#" and (i == 0 or s[i - 1].isspace()):
+                s = s[:i].rstrip()
+                break
+        return s.strip()
+
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -146,11 +187,9 @@ def load_dotenv(dotenv_path: str | Path | None = None, *, override: bool = False
             continue
         key, value = line.split("=", 1)
         key = key.strip()
-        value = value.strip()
+        value = _parse_value(value)
         if not key:
             continue
-        if len(value) >= 2 and ((value[0] == value[-1]) and value[0] in {"'", '"'}):
-            value = value[1:-1]
         if (not override) and (key in os.environ):
             continue
         os.environ[key] = value
