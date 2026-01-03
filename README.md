@@ -103,7 +103,7 @@ export DEEPSEEK_API_KEY="..."
 - **时间线**（默认配置对齐论文图4叙述）：
   - `t∈[0,100)`：未启用 slicing 控制的默认阶段，固定 PRB 分配（默认 `prb1=96, prb2=32`）→ UE1≈30 Mbps、UE2≈10 Mbps
   - `t∈[100,200)`：slice init + 初始化均分阶段，固定 `prb1=prb2=64` → UE1≈20 Mbps、UE2≈10 Mbps
-  - `t≥200`：方法策略生效（`random/proportional/llm` 从 200 开始；`equal` 从 100 开始且持续均分）
+  - `t≥200`：方法策略生效并进入对比阶段（`random/proportional/llm` 在此刻切换；`equal` 动作与初始化均分相同，因此曲线不会在 200 处发生跳变）
 - **system utility / system reliability**：从 `t=0` 起对 UE1/UE2 两个 slice 的 `u_s^t` / `θ_s^t` 做**简单平均**（未加权）。
 - **Reliability θ**：按论文定义为滑窗内 `u_s^τ <= u_th_s` 的比例（本实现将窗口越界部分截断，并除以有效样本数；详见 `ran_llm_xapp/metrics.py`）。
 - 图5 的 time-averaged 统计默认在 **t ∈ [baseline_start_time, T_end]** 上计算（强调 t=200 后策略差异）。

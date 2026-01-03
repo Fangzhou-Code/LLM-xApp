@@ -74,7 +74,7 @@ class ExperimentConfig:
 
     # Synthetic environment model (tunable)
     eff1_mbps_per_prb: float = 0.3125  # 64 PRB -> 20 Mbps; 96 PRB -> 30 Mbps; 128 PRB -> 40 Mbps
-    eff2_mbps_per_prb: float = 2.0
+    eff2_mbps_per_prb: float = 0.5
     # Hard caps (Mbps). Effective target is min(demand, hard_cap); None means +inf.
     cap1_hard_mbps: Optional[float] = 45.0
     cap2_hard_mbps: Optional[float] = 10.0

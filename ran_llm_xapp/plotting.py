@@ -66,8 +66,7 @@ def plot_fig4_grid(
         ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5)
         ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5)
         ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
-        alloc_start_t = cfg.slice_init_time if method == "equal" else cfg.baseline_start_time
-        ax.axvline(alloc_start_t, color="k", linestyle=":", linewidth=1.0)
+        ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
         ax.set_title(f"{_panel_label(i)} {method}")
         ax.grid(True, alpha=0.3)
         if (i % ncols) == 0:
@@ -83,7 +82,7 @@ def plot_fig4_grid(
     fig.legend(handles, labels, loc="upper center", ncol=2, frameon=False)
     fig.suptitle(
         "Fig.4-style Measured Data Rate (UE1 vs UE2)\n"
-        "-- slice init @100s, : allocation starts (equal@100s, others@200s)"
+        "-- slice init @100s, : allocation starts @200s"
     )
     fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(out_path, dpi=150)
@@ -112,8 +111,7 @@ def plot_fig4_single(
     ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5)
     ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5)
     ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0, label="slice init")
-    alloc_start_t = cfg.slice_init_time if method == "equal" else cfg.baseline_start_time
-    ax.axvline(alloc_start_t, color="k", linestyle=":", linewidth=1.0, label="allocation starts")
+    ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0, label="allocation starts")
     ax.set_title(method)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Measured data rate (Mbps)")
