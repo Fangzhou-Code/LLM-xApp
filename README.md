@@ -5,7 +5,7 @@
 关键点：
 - **不依赖** OAIC testbed / srsRAN / O-RAN 组件
 - 严格实现论文关键定义：Utility(式(1)(2))、Reliability(滑窗 Tw)、动作到 PRB 映射(式(7) + 超预算修正)、评价函数(式(8), 默认 `g(x)=-x^2`)
-- 实现 5 个方法：`equal` / `random` / `proportional` / `tnas`（Top-N Action Sampling）/ `oracle`（Exact-Soft-Opt）
+- 实现 6 个方法：`equal` / `random` / `proportional` / `tnas`（Top-N Action Sampling）/ `cem`（Budgeted CEM）/ `oracle`（Exact-Soft-Opt）
 
 ## 安装
 
@@ -21,8 +21,7 @@ python3 -m pip install -e .
 
 命令入口：
 ```bash
-python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/run1 \
-  --llm-runs stub:stub
+python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/run1 --llm-runs stub:stub
 ```
 
 至少 3 个 methods 子集示例：
@@ -36,6 +35,10 @@ python3 -m scripts.run_experiments --methods equal proportional --seed 0 --out o
 
 # 跑全部（默认推荐：stub，无需 key 也能出图）
 python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/all_stub \
+  --llm-runs stub:stub
+
+# 也可用 all2 把 oracle 一起跑上（更慢，但作为上界参考）
+python3 -m scripts.run_experiments --methods all2 --seed 0 --out outputs/all2_stub \
   --llm-runs stub:stub
 ```
 

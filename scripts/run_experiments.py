@@ -22,6 +22,7 @@ from ran_llm_xapp.metrics import (
 )
 from ran_llm_xapp.plotting import plot_fig4_grid, plot_fig4_single, plot_fig5_bars, plot_fig5_sys_curve
 from ran_llm_xapp.policies import (
+    CEMPolicy,
     EqualPolicy,
     Observation,
     OraclePolicy,
@@ -36,16 +37,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("run_experiments")
 
 
-METHODS_ALL = ("equal", "random", "proportional", "tnas", "oracle")
+METHODS_ALL = ("equal", "random", "proportional", "tnas", "cem")
+METHODS_VALID = tuple(list(METHODS_ALL) + ["oracle"])
 
 
 def _parse_methods(raw: Sequence[str]) -> List[str]:
-    if len(raw) == 1 and raw[0].lower() == "all":
+    if len(raw) == 1 and raw[0].lower() in {"all", "all2"}:
+        if raw[0].lower() == "all2":
+            return list(METHODS_VALID)
         return list(METHODS_ALL)
     methods = [m.lower() for m in raw]
-    unknown = [m for m in methods if m not in METHODS_ALL]
+    unknown = [m for m in methods if m not in METHODS_VALID]
     if unknown:
-        raise SystemExit(f"Unknown methods: {unknown}. Valid: {METHODS_ALL} or 'all'")
+        raise SystemExit(f"Unknown methods: {unknown}. Valid: {METHODS_VALID} or 'all'/'all2'")
     # de-dup while preserving order
     out: List[str] = []
     for m in methods:
@@ -211,6 +215,9 @@ def _build_policy(
         return RandomPolicy(seed=seed + 12345)
     if method == "oracle":
         return OraclePolicy(cfg=cfg)
+    if method == "cem":
+        # Budgeted black-box search baseline (no LLM).
+        return CEMPolicy(cfg=cfg, seed=seed + 54321)
     if method == "tnas":
         if llm_provider == "openai":
             client = OpenAIClient()
@@ -319,7 +326,7 @@ def run_single_method(
                     recent_hat_sigma2=win2,
                 )
                 current_action = policy.select_action(obs)
-                if method == "oracle":
+                if method in {"oracle", "cem"}:
                     current_prbs = (int(current_action[0]), int(current_action[1]))
                 else:
                     current_prbs = action_to_prbs(current_action, cfg.R_total)
@@ -429,7 +436,7 @@ def main() -> None:
         "--methods",
         nargs="+",
         required=True,
-        help="Methods to run: all | equal random proportional tnas oracle",
+        help="Methods to run: all | all2 | equal random proportional tnas cem oracle",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=str, required=True)
@@ -498,6 +505,8 @@ def main() -> None:
             run_specs.append((method, default_provider, default_model))
             if method == "oracle":
                 display_name_by_key[method] = "Oracle (Exact-Soft-Opt)"
+            elif method == "cem":
+                display_name_by_key[method] = "CEM (budgeted)"
             else:
                 display_name_by_key[method] = method
         else:
@@ -598,7 +607,7 @@ def main() -> None:
 
     # Plotting
     methods_order: List[str] = []
-    baseline_keys = [k for k in ("equal", "random", "proportional", "oracle") if k in results_by_method]
+    baseline_keys = [k for k in ("equal", "random", "proportional", "cem", "oracle") if k in results_by_method]
     tnas_keys = [k for k in tnas_variant_keys if k in results_by_method]
 
     methods_order.extend(baseline_keys)
