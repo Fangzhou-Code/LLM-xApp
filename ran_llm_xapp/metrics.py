@@ -166,6 +166,8 @@ def evaluate_V_k(
     t_k: int,
     hat_sigma1_series: Sequence[float],
     hat_sigma2_series: Sequence[float],
+    sigma1_tk: Optional[float] = None,
+    sigma2_tk: Optional[float] = None,
 ) -> float:
     """Compute V_k(o_k, A_k) (paper Eq.(8)) at a given slot-end time index t_k.
 
@@ -183,9 +185,9 @@ def evaluate_V_k(
     start = max(0, t_k - half)
     end = min(len(hat_sigma1_series) - 1, t_k)
 
-    # Requested rates at time t_k
-    sigma1_tk = cfg.sigma1
-    sigma2_tk = cfg.sigma2
+    # Requested rates at time t_k (support time-varying sigma via explicit params).
+    sigma1_tk = float(cfg.sigma1) if sigma1_tk is None else float(sigma1_tk)
+    sigma2_tk = float(cfg.sigma2) if sigma2_tk is None else float(sigma2_tk)
 
     sum1 = 0.0
     sum2 = 0.0
@@ -202,13 +204,18 @@ def evaluate_V_k(
 
 @dataclass(frozen=True)
 class SoftObjective:
-    """Soft objective for OPRO: V_k plus a UE2 PRB waste penalty (post-baseline)."""
+    """Soft objective for OPRO: V_k plus a configurable shortfall penalty (post-enable time)."""
 
     V_k: float
-    prb2_min_est: int
-    waste: int
+    eff_cap1: float
+    eff_cap2: float
+    shortfall1: float
+    shortfall2: float
     penalty: float
     V_k_soft: float
+    # Backward-compat debug fields (kept in CSV; not used by V_k_soft here).
+    prb2_min_est: int = 0
+    waste: int = 0
 
 
 def compute_prb2_waste_penalty(
@@ -252,20 +259,54 @@ def evaluate_V_k_soft(
     t_k: int,
     hat_sigma1_series: Sequence[float],
     hat_sigma2_series: Sequence[float],
+    sigma1_tk: float,
+    sigma2_tk: float,
+    mean_hat_sigma1: float,
     mean_hat_sigma2: float,
-    prb2: int,
 ) -> SoftObjective:
-    """Compute V_k_soft = V_k + penalty (penalty enabled only post-baseline)."""
+    """Compute soft score: V_k_soft = V_k - λ1*shortfall1^p - λ2*shortfall2^p.
 
-    V_k = evaluate_V_k(cfg, t_k=t_k, hat_sigma1_series=hat_sigma1_series, hat_sigma2_series=hat_sigma2_series)
-    prb2_min_est, waste, penalty_full = compute_prb2_waste_penalty(cfg, mean_hat_sigma2=mean_hat_sigma2, prb2=prb2)
-    penalty = float(penalty_full) if int(t_k) >= int(cfg.baseline_start_time) else 0.0
+    Where for each slice s:
+      eff_cap_s^k = min(sigma_s^k, C_s)         (C_s is hard cap; None => +inf)
+      shortfall_s^k = max(0, eff_cap_s^k - hat_sigma_s^k)
+
+    This penalty is enabled only for t_k >= cfg.soft_enable_time (default=baseline_start_time).
+    """
+
+    V_k = evaluate_V_k(
+        cfg,
+        t_k=t_k,
+        hat_sigma1_series=hat_sigma1_series,
+        hat_sigma2_series=hat_sigma2_series,
+        sigma1_tk=float(sigma1_tk),
+        sigma2_tk=float(sigma2_tk),
+    )
+
+    eff_cap1 = effective_cap_mbps(float(sigma1_tk), cfg.cap1_hard_mbps)
+    eff_cap2 = effective_cap_mbps(float(sigma2_tk), cfg.cap2_hard_mbps)
+    shortfall1 = max(0.0, float(eff_cap1) - float(mean_hat_sigma1))
+    shortfall2 = max(0.0, float(eff_cap2) - float(mean_hat_sigma2))
+
+    penalty = 0.0
+    if bool(cfg.use_soft_score) and int(t_k) >= int(cfg.soft_enable_time):
+        p = int(cfg.soft_p)
+        if p <= 0:
+            raise ValueError("soft_p must be positive")
+        penalty = -(
+            float(cfg.lambda1) * float(shortfall1**p)
+            + float(cfg.lambda2) * float(shortfall2**p)
+        )
+
     return SoftObjective(
         V_k=float(V_k),
-        prb2_min_est=int(prb2_min_est),
-        waste=int(waste),
+        eff_cap1=float(eff_cap1),
+        eff_cap2=float(eff_cap2),
+        shortfall1=float(shortfall1),
+        shortfall2=float(shortfall2),
         penalty=float(penalty),
         V_k_soft=float(V_k + penalty),
+        prb2_min_est=0,
+        waste=0,
     )
 
 

@@ -33,11 +33,13 @@ class OptimizationRecord:
     prb2: int
     sigma1: float
     sigma2: float
+    eff_cap1: float
+    eff_cap2: float
     mean_hat_sigma1: float
     mean_hat_sigma2: float
+    shortfall1: float
+    shortfall2: float
     V_k: float
-    prb2_min_est: int
-    waste: int
     penalty: float
     V_k_soft: float
 
@@ -181,10 +183,14 @@ class LLMOPROPolicy(Policy):
                     a2=rec.action[1],
                     prb1=rec.prb1,
                     prb2=rec.prb2,
+                    sigma1=rec.sigma1,
+                    sigma2=rec.sigma2,
+                    eff_cap1=rec.eff_cap1,
+                    eff_cap2=rec.eff_cap2,
                     mean_hat_sigma1=rec.mean_hat_sigma1,
                     mean_hat_sigma2=rec.mean_hat_sigma2,
-                    prb2_min_est=rec.prb2_min_est,
-                    waste=rec.waste,
+                    shortfall1=rec.shortfall1,
+                    shortfall2=rec.shortfall2,
                     penalty=rec.penalty,
                 )
             )
@@ -241,11 +247,9 @@ class LLMOPROPolicy(Policy):
         eff_cap1 = effective_cap_mbps(float(obs.sigma1), cap1_hard)
         eff_cap2 = effective_cap_mbps(float(obs.sigma2), cap2_hard)
 
-        # Estimate UE2 minimal PRBs to reach its effective target (soft, used for prompt + proxy).
-        prb2_curr = int(max(0, obs.current_prb2))
-        eff2_est = max(float(self.cfg.eff2_mbps_per_prb), float(self.cfg.waste_eps))
-        prb2_min_est = int(math.ceil(eff_cap2 / max(eff2_est, float(self.cfg.waste_eps)))) if eff_cap2 > 0 else 0
-        prb2_min_est = max(0, prb2_min_est)
+        # Soft shortfall (used in prompt + proxy selection).
+        shortfall1 = max(0.0, float(eff_cap1) - float(mean1))
+        shortfall2 = max(0.0, float(eff_cap2) - float(mean2))
 
         prompt_obs = PromptObservation(
             t=obs.t,
@@ -259,11 +263,16 @@ class LLMOPROPolicy(Policy):
             Tem_k=float(self.temperature),
             cap1_hard_mbps=cap1_hard,
             cap2_hard_mbps=cap2_hard,
+            eff_cap1_mbps=float(eff_cap1),
             eff_cap2_mbps=float(eff_cap2),
+            shortfall1=float(shortfall1),
+            shortfall2=float(shortfall2),
             current_prb1=int(max(0, obs.current_prb1)),
-            current_prb2=prb2_curr,
-            prb2_min_est=int(prb2_min_est),
-            lambda_waste=float(self.cfg.lambda_waste),
+            current_prb2=int(max(0, obs.current_prb2)),
+            soft_p=int(self.cfg.soft_p),
+            lambda1=float(self.cfg.lambda1),
+            lambda2=float(self.cfg.lambda2),
+            soft_enable_time=int(self.cfg.soft_enable_time),
             last_action_a1=last_a1,
             last_action_a2=last_a2,
         )
@@ -303,7 +312,10 @@ class LLMOPROPolicy(Policy):
 
         # Ensure diversity / include aggressive small-a2 candidates for best-of-N selection.
         aggressive_set = {4, 8, 12, 16}
-        seed_required = [clamp_action(128 - int(prb2_min_est), int(prb2_min_est))]
+        eff2_est = max(float(self.cfg.eff2_mbps_per_prb), float(self.cfg.waste_eps))
+        prb2_need_est = int(math.ceil(float(eff_cap2) / max(eff2_est, float(self.cfg.waste_eps)))) if eff_cap2 > 0 else 1
+        prb2_need_est = max(1, min(128, prb2_need_est))
+        seed_required = [clamp_action(128 - int(prb2_need_est), int(prb2_need_est))]
         seed_aggressive = [clamp_action(128 - a2, a2) for a2 in (4, 8, 12)]
         seed_mid = [
             clamp_action(int(round(obs.sigma1)), int(round(obs.sigma2))),  # proportional
@@ -352,7 +364,7 @@ class LLMOPROPolicy(Policy):
                     break
         candidates = first_six[:6]
 
-        # Best-of-N: choose by one-step soft proxy (includes UE2 waste penalty).
+        # Best-of-N: choose by one-step soft proxy aligned with V_k_soft (shortfall penalty).
         g = get_g_function(self.cfg)
         prb1_curr = int(max(0, obs.current_prb1))
         eff1_est_raw = float(mean1) / max(prb1_curr, 1)
@@ -364,12 +376,19 @@ class LLMOPROPolicy(Policy):
             prb1_c, prb2_c = action_to_prbs(cand, self.cfg.R_total)
             pred1 = min(eff_cap1, eff1_est * prb1_c)
             pred2 = min(eff_cap2, eff2_est * prb2_c)
-            x1 = pred1 - eff_cap1
-            x2 = pred2 - eff_cap2
-            waste = max(0, int(prb2_c) - int(prb2_min_est))
-            score = (self.cfg.beta1 * g(float(x1))) + (self.cfg.beta2 * g(float(x2))) - (
-                float(self.cfg.lambda_waste) * float(waste * waste)
-            )
+            x1 = pred1 - float(obs.sigma1)
+            x2 = pred2 - float(obs.sigma2)
+            # Soft shortfall penalty (enabled only post soft_enable_time).
+            sf1 = max(0.0, float(eff_cap1) - float(pred1))
+            sf2 = max(0.0, float(eff_cap2) - float(pred2))
+            penalty = 0.0
+            if bool(self.cfg.use_soft_score) and int(obs.t) >= int(self.cfg.soft_enable_time):
+                p = int(self.cfg.soft_p)
+                penalty = -(
+                    float(self.cfg.lambda1) * float(sf1**p)
+                    + float(self.cfg.lambda2) * float(sf2**p)
+                )
+            score = (self.cfg.beta1 * g(float(x1))) + (self.cfg.beta2 * g(float(x2))) + float(penalty)
             proxy_scores.append(float(score))
             scored.append((float(score), idx, cand))
 
@@ -396,6 +415,10 @@ class LLMOPROPolicy(Policy):
         return chosen_action
 
     def record_outcome(self, outcome: SlotOutcome) -> None:
+        eff_cap1 = effective_cap_mbps(float(outcome.sigma1), self.cfg.cap1_hard_mbps)
+        eff_cap2 = effective_cap_mbps(float(outcome.sigma2), self.cfg.cap2_hard_mbps)
+        shortfall1 = max(0.0, float(eff_cap1) - float(outcome.mean_hat_sigma1))
+        shortfall2 = max(0.0, float(eff_cap2) - float(outcome.mean_hat_sigma2))
         rec = OptimizationRecord(
             k=outcome.k,
             action=outcome.action,
@@ -403,11 +426,13 @@ class LLMOPROPolicy(Policy):
             prb2=outcome.prb2,
             sigma1=outcome.sigma1,
             sigma2=outcome.sigma2,
+            eff_cap1=float(eff_cap1),
+            eff_cap2=float(eff_cap2),
             mean_hat_sigma1=outcome.mean_hat_sigma1,
             mean_hat_sigma2=outcome.mean_hat_sigma2,
+            shortfall1=float(shortfall1),
+            shortfall2=float(shortfall2),
             V_k=outcome.V_k,
-            prb2_min_est=outcome.prb2_min_est,
-            waste=outcome.waste,
             penalty=outcome.penalty,
             V_k_soft=outcome.V_k_soft,
         )

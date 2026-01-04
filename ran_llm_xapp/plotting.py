@@ -7,6 +7,23 @@ from .config import ExperimentConfig
 from .metrics import moving_average_trailing
 
 
+def _demand_change_times(cfg: ExperimentConfig) -> List[int]:
+    """Return demand schedule change times strictly after baseline_start_time."""
+
+    times: List[int] = []
+    for entry in cfg.demand_schedule or []:
+        if not isinstance(entry, (list, tuple)) or len(entry) < 3:
+            continue
+        try:
+            t0 = int(entry[0])
+        except Exception:
+            continue
+        if t0 > int(cfg.baseline_start_time) and t0 not in times:
+            times.append(t0)
+    times.sort()
+    return times
+
+
 def plot_fig4_grid(
     *,
     cfg: ExperimentConfig,
@@ -67,6 +84,8 @@ def plot_fig4_grid(
         ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5)
         ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
         ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
+        for t0 in _demand_change_times(cfg):
+            ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
         ax.set_title(f"{_panel_label(i)} {method}")
         ax.grid(True, alpha=0.3)
         if (i % ncols) == 0:
@@ -82,7 +101,7 @@ def plot_fig4_grid(
     fig.legend(handles, labels, loc="upper center", ncol=2, frameon=False)
     fig.suptitle(
         "Fig.4-style Measured Data Rate (UE1 vs UE2)\n"
-        "-- slice init @100s, : allocation starts @200s"
+        "-- slice init @100s, : allocation starts @200s, -. demand change"
     )
     fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(out_path, dpi=150)
@@ -112,6 +131,8 @@ def plot_fig4_single(
     ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5)
     ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0, label="slice init")
     ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0, label="allocation starts")
+    for t0 in _demand_change_times(cfg):
+        ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0, label="demand change")
     ax.set_title(method)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Measured data rate (Mbps)")
@@ -149,6 +170,8 @@ def plot_fig5_sys_curve(
 
     ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
     ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
+    for t0 in _demand_change_times(cfg):
+        ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
     ax.set_title(title)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel(ylabel)

@@ -82,8 +82,9 @@ class SyntheticRANSliceEnv:
         # This avoids inconsistencies where a slice is "capped" below/above its demand in
         # different parts of the simulation, and makes diminishing returns explicit when
         # a slice already reaches its effective target.
-        eff_cap1 = _effective_cap(self.cfg.sigma1, self.cfg.cap1_hard_mbps)
-        eff_cap2 = _effective_cap(self.cfg.sigma2, self.cfg.cap2_hard_mbps)
+        sigma1_t, sigma2_t = self.cfg.sigma_at(t)
+        eff_cap1 = _effective_cap(float(sigma1_t), self.cfg.cap1_hard_mbps)
+        eff_cap2 = _effective_cap(float(sigma2_t), self.cfg.cap2_hard_mbps)
         ideal1 = min(eff_cap1, self.cfg.eff1_mbps_per_prb * prb1)
         ideal2 = min(eff_cap2, self.cfg.eff2_mbps_per_prb * prb2)
 

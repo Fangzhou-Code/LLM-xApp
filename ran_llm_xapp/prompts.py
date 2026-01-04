@@ -14,10 +14,14 @@ class HistoryExample:
     a2: int
     prb1: int
     prb2: int
+    sigma1: float
+    sigma2: float
+    eff_cap1: float
+    eff_cap2: float
     mean_hat_sigma1: float
     mean_hat_sigma2: float
-    prb2_min_est: int
-    waste: int
+    shortfall1: float
+    shortfall2: float
     penalty: float
 
 
@@ -34,11 +38,16 @@ class PromptObservation:
     Tem_k: float
     cap1_hard_mbps: Optional[float]
     cap2_hard_mbps: Optional[float]
+    eff_cap1_mbps: float
     eff_cap2_mbps: float
+    shortfall1: float
+    shortfall2: float
     current_prb1: int
     current_prb2: int
-    prb2_min_est: int
-    lambda_waste: float
+    soft_p: int
+    lambda1: float
+    lambda2: float
+    soft_enable_time: int
     last_action_a1: Optional[int] = None
     last_action_a2: Optional[int] = None
 
@@ -50,8 +59,9 @@ def _format_history(examples: Sequence[HistoryExample]) -> str:
     for ex in examples:
         lines.append(
             f"- k={ex.k}, V_k_soft={ex.V_k_soft:.2f}, action={{\"a1\":{ex.a1},\"a2\":{ex.a2}}}, "
-            f"PRB=({ex.prb1},{ex.prb2}), prb2_min_est={ex.prb2_min_est}, waste={ex.waste}, penalty={ex.penalty:.1f}, "
-            f"mean_hat_sigma=(UE1={ex.mean_hat_sigma1:.2f}, UE2={ex.mean_hat_sigma2:.2f})"
+            f"PRB=({ex.prb1},{ex.prb2}), sigma=({ex.sigma1:.1f},{ex.sigma2:.1f}), "
+            f"eff_cap=({ex.eff_cap1:.1f},{ex.eff_cap2:.1f}), shortfall=({ex.shortfall1:.2f},{ex.shortfall2:.2f}), "
+            f"penalty={ex.penalty:.1f}, mean_hat_sigma=(UE1={ex.mean_hat_sigma1:.2f}, UE2={ex.mean_hat_sigma2:.2f})"
         )
     return "\n".join(lines)
 
@@ -86,11 +96,14 @@ Goal:
 - Propose MULTIPLE candidate actions for the next slot and let the controller pick the best.
 - The controller maximizes a soft objective V_k_soft = V_k + penalty. Higher V_k_soft is better.
   - V_k is the paper Eq.(8) score with g(x) = -x^2 (squared mismatch penalty + constants).
-  - penalty discourages wasting PRBs on UE2 after it is already near its effective target:
-      prb2_min_est = ceil(eff_cap2 / max(eff2_est, eps))
-      waste = max(0, prb2 - prb2_min_est)
-      penalty = -lambda_waste * waste^2
-    This is a soft preference (NOT a hard rule), but it makes UE2 diminishing returns explicit.
+  - penalty is a soft shortfall penalty (NOT a hard rule):
+      eff_cap_s = min(sigma_s, cap_s_hard)  (cap_s_hard=None means +inf)
+      shortfall_s = max(0, eff_cap_s - hat_sigma_s)
+      penalty = -lambda1 * (shortfall1^p) - lambda2 * (shortfall2^p)
+    Notes:
+    - When the total demand is feasible, prefer meeting BOTH slices (shortfalls near 0).
+    - When infeasible (e.g., sigma1 increases), allow small UE2 shortfall to reduce UE1 shortfall,
+      but the trade-off is governed by lambda1/lambda2 and p (no hard-coded rule).
 
 Action constraints:
 - a1 and a2 are integers in [1, 128].
@@ -104,13 +117,14 @@ Current observation:
 - time t = {obs.t}
 - requested rates (Mbps): sigma1 = {obs.sigma1:.3f}, sigma2 = {obs.sigma2:.3f}
 - hard caps (Mbps): cap1_hard = {cap1_str}, cap2_hard = {cap2_str} (None means +inf)
-- UE2 effective target: eff_cap2 = min(sigma2, cap2_hard) = {obs.eff_cap2_mbps:.3f} Mbps
+- effective targets (Mbps): eff_cap1 = {obs.eff_cap1_mbps:.3f}, eff_cap2 = {obs.eff_cap2_mbps:.3f}
 - current PRB allocation: prb1 = {obs.current_prb1}, prb2 = {obs.current_prb2}
 - recent measured rate stats (Mbps):
   - UE1: mean={obs.mean_hat_sigma1:.3f}, last={obs.last_hat_sigma1:.3f}
   - UE2: mean={obs.mean_hat_sigma2:.3f}, last={obs.last_hat_sigma2:.3f}
-- prb2_min_est (soft estimate) = {obs.prb2_min_est}
-- lambda_waste = {obs.lambda_waste:.3f}
+- current shortfalls (Mbps): shortfall1={obs.shortfall1:.3f}, shortfall2={obs.shortfall2:.3f}
+- soft-penalty params: p={obs.soft_p}, lambda1={obs.lambda1:.3f}, lambda2={obs.lambda2:.3f}
+- soft penalty enabled for t >= {obs.soft_enable_time}
 - current temperature Tem_k = {obs.Tem_k:.3f}
 
 Top history examples (sorted by V_k_soft desc; best -> worst):

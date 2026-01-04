@@ -15,6 +15,7 @@ from ran_llm_xapp.metrics import (
     action_to_prbs,
     compute_time_averages,
     compute_utilities,
+    effective_cap_mbps,
     evaluate_V_k_soft,
     reliability_outage_fraction,
     system_average,
@@ -109,6 +110,81 @@ def _parse_llm_runs(args: argparse.Namespace) -> List[Tuple[str, str]]:
     return out
 
 
+def _estimate_prb_need(*, sigma_mbps: float, cap_hard_mbps: float | None, eff_mbps_per_prb: float) -> int:
+    eff_cap = effective_cap_mbps(float(sigma_mbps), cap_hard_mbps)
+    eff = float(eff_mbps_per_prb)
+    if eff_cap <= 0:
+        return 0
+    if eff <= 0:
+        return 10**9
+    return int(math.ceil(eff_cap / eff))
+
+
+def _warn_if_schedule_not_sane(cfg: ExperimentConfig) -> None:
+    """Light sanity check to ensure stageA is feasible and stageB is infeasible (with margin)."""
+
+    # Stage A starts at baseline_start_time; stage B starts at the next schedule change.
+    starts = sorted({int(s[0]) for s in (cfg.demand_schedule or []) if isinstance(s, (list, tuple)) and len(s) >= 3})
+    stage_a_t = int(cfg.baseline_start_time)
+    stage_b_t: int | None = None
+    for t0 in starts:
+        if t0 > stage_a_t:
+            stage_b_t = int(t0)
+            break
+    if stage_b_t is None:
+        logger.warning("Demand schedule sanity check skipped (no stage-B change point found).")
+        return
+
+    margin = int(getattr(cfg, "schedule_margin_prb", 8))
+
+    s1a, s2a = cfg.sigma_at(stage_a_t)
+    s1b, s2b = cfg.sigma_at(stage_b_t)
+
+    need1a = _estimate_prb_need(sigma_mbps=s1a, cap_hard_mbps=cfg.cap1_hard_mbps, eff_mbps_per_prb=cfg.eff1_mbps_per_prb)
+    need2a = _estimate_prb_need(sigma_mbps=s2a, cap_hard_mbps=cfg.cap2_hard_mbps, eff_mbps_per_prb=cfg.eff2_mbps_per_prb)
+    need1b = _estimate_prb_need(sigma_mbps=s1b, cap_hard_mbps=cfg.cap1_hard_mbps, eff_mbps_per_prb=cfg.eff1_mbps_per_prb)
+    need2b = _estimate_prb_need(sigma_mbps=s2b, cap_hard_mbps=cfg.cap2_hard_mbps, eff_mbps_per_prb=cfg.eff2_mbps_per_prb)
+
+    total = int(cfg.R_total)
+    if (need1a + need2a) > (total - margin):
+        logger.warning(
+            "Demand schedule stageA may be infeasible: t=%s sigma=(%.1f,%.1f) prb_need=(%s,%s) R_total=%s margin=%s",
+            stage_a_t,
+            s1a,
+            s2a,
+            need1a,
+            need2a,
+            total,
+            margin,
+        )
+    if (need1b + need2b) < (total + margin):
+        logger.warning(
+            "Demand schedule stageB may be feasible: t=%s sigma=(%.1f,%.1f) prb_need=(%s,%s) R_total=%s margin=%s",
+            stage_b_t,
+            s1b,
+            s2b,
+            need1b,
+            need2b,
+            total,
+            margin,
+        )
+
+    logger.info(
+        "Demand schedule check: stageA t=%s sigma=(%.1f,%.1f) needPRB=(%s,%s); stageB t=%s sigma=(%.1f,%.1f) needPRB=(%s,%s); R_total=%s",
+        stage_a_t,
+        s1a,
+        s2a,
+        need1a,
+        need2a,
+        stage_b_t,
+        s1b,
+        s2b,
+        need1b,
+        need2b,
+        total,
+    )
+
+
 def _build_policy(
     method: str,
     *,
@@ -167,6 +243,12 @@ def run_single_method(
     u1_series: List[float] = []
     u2_series: List[float] = []
     slice2_active_series: List[bool] = []
+    sigma1_series: List[float] = []
+    sigma2_series: List[float] = []
+    eff_cap1_series: List[float] = []
+    eff_cap2_series: List[float] = []
+    shortfall1_series: List[float] = []
+    shortfall2_series: List[float] = []
     prb2_min_est_series: List[float] = []
     waste_series: List[float] = []
     penalty_series: List[float] = []
@@ -185,6 +267,13 @@ def run_single_method(
     for t in times:
         slice2_active = True
         slice2_active_series.append(True)
+        sigma1_t, sigma2_t = cfg.sigma_at(t)
+        sigma1_series.append(float(sigma1_t))
+        sigma2_series.append(float(sigma2_t))
+        eff_cap1_series.append(float(effective_cap_mbps(float(sigma1_t), cfg.cap1_hard_mbps)))
+        eff_cap2_series.append(float(effective_cap_mbps(float(sigma2_t), cfg.cap2_hard_mbps)))
+        shortfall1_series.append(float("nan"))
+        shortfall2_series.append(float("nan"))
         prb2_min_est_series.append(float("nan"))
         waste_series.append(float("nan"))
         penalty_series.append(float("nan"))
@@ -211,8 +300,8 @@ def run_single_method(
                 win2 = _recent_window(hat2_series, len(hat2_series) - 1, cfg.Tw) if hat2_series else []
                 obs = Observation(
                     t=t,
-                    sigma1=cfg.sigma1,
-                    sigma2=cfg.sigma2,
+                    sigma1=float(sigma1_t),
+                    sigma2=float(sigma2_t),
                     slice2_active=True,
                     current_prb1=int(current_prbs[0]),
                     current_prb2=int(current_prbs[1]),
@@ -236,8 +325,8 @@ def run_single_method(
             cfg,
             hat_sigma1=step.hat_sigma1,
             hat_sigma2=step.hat_sigma2,
-            sigma1=cfg.sigma1,
-            sigma2=cfg.sigma2,
+            sigma1=float(sigma1_t),
+            sigma2=float(sigma2_t),
             slice2_active=True,
         )
         u1_series.append(u1)
@@ -255,9 +344,13 @@ def run_single_method(
                 t_k=t,
                 hat_sigma1_series=hat1_series,
                 hat_sigma2_series=hat2_series,
+                sigma1_tk=float(sigma1_t),
+                sigma2_tk=float(sigma2_t),
+                mean_hat_sigma1=float(mean_hat1),
                 mean_hat_sigma2=float(mean_hat2) if slice2_active else 0.0,
-                prb2=int(current_prbs[1]),
             )
+            shortfall1_series[-1] = float(soft.shortfall1)
+            shortfall2_series[-1] = float(soft.shortfall2)
             prb2_min_est_series[-1] = float(soft.prb2_min_est)
             waste_series[-1] = float(soft.waste)
             penalty_series[-1] = float(soft.penalty)
@@ -270,8 +363,8 @@ def run_single_method(
                     action=current_action,
                     prb1=current_prbs[0],
                     prb2=current_prbs[1],
-                    sigma1=cfg.sigma1,
-                    sigma2=cfg.sigma2,
+                    sigma1=float(sigma1_t),
+                    sigma2=float(sigma2_t),
                     mean_hat_sigma1=mean_hat1,
                     mean_hat_sigma2=mean_hat2,
                     V_k=float(soft.V_k),
@@ -298,8 +391,12 @@ def run_single_method(
         "prb2": [float(x) for x in prb2_series],
         "hat_sigma1": hat1_series,
         "hat_sigma2": hat2_series,
-        "sigma1": [float(cfg.sigma1) for _ in times],
-        "sigma2": [float(cfg.sigma2) for _ in times],
+        "sigma1": sigma1_series,
+        "sigma2": sigma2_series,
+        "eff_cap1": eff_cap1_series,
+        "eff_cap2": eff_cap2_series,
+        "shortfall1": shortfall1_series,
+        "shortfall2": shortfall2_series,
         "u1": u1_series,
         "u2": u2_series,
         "theta1": theta1_series,
@@ -353,6 +450,8 @@ def main() -> None:
     if overrides:
         cfg = cfg.with_overrides(**overrides)
 
+    _warn_if_schedule_not_sane(cfg)
+
     save_config_prefer_yaml(cfg, out_dir)
 
     cache_dir = Path(args.cache_dir) if args.cache_dir else (out_dir / "llm_cache")
@@ -400,14 +499,18 @@ def main() -> None:
                         "method": method_key,
                         "prb1": int(res["prb1"][i]),
                         "prb2": int(res["prb2"][i]),
+                        "sigma1": float(res["sigma1"][i]),
+                        "sigma2": float(res["sigma2"][i]),
+                        "eff_cap1": float(res["eff_cap1"][i]),
+                        "eff_cap2": float(res["eff_cap2"][i]),
+                        "shortfall1": float(res["shortfall1"][i]),
+                        "shortfall2": float(res["shortfall2"][i]),
                         "prb2_min_est": float(res["prb2_min_est"][i]),
                         "waste": float(res["waste"][i]),
                         "penalty": float(res["penalty"][i]),
                         "V_k_soft": float(res["V_k_soft"][i]),
                         "hat_sigma1": float(res["hat_sigma1"][i]),
                         "hat_sigma2": float(res["hat_sigma2"][i]),
-                        "sigma1": float(res["sigma1"][i]),
-                        "sigma2": float(res["sigma2"][i]),
                         "u1": float(res["u1"][i]),
                         "u2": float(res["u2"][i]),
                         "theta1": float(res["theta1"][i]),
@@ -423,14 +526,18 @@ def main() -> None:
                     "method",
                     "prb1",
                     "prb2",
+                    "sigma1",
+                    "sigma2",
+                    "eff_cap1",
+                    "eff_cap2",
+                    "shortfall1",
+                    "shortfall2",
                     "prb2_min_est",
                     "waste",
                     "penalty",
                     "V_k_soft",
                     "hat_sigma1",
                     "hat_sigma2",
-                    "sigma1",
-                    "sigma2",
                     "u1",
                     "u2",
                     "theta1",

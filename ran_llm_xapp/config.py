@@ -4,7 +4,7 @@ import dataclasses
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,16 @@ class ExperimentConfig:
     # Requested rates (Mbps)
     sigma1: float = 40.0
     sigma2: float = 10.0
+    # Demand schedule for the allocation phase (time-varying σ_s^t).
+    # Each entry is: (start_time_s, sigma1_mbps, sigma2_mbps), piecewise-constant.
+    #
+    # Default schedule requested by the experiment spec:
+    # - t < 200         : sigma1=40, sigma2=10
+    # - 200 <= t < 400  : sigma1=30, sigma2=10   (feasible)
+    # - t >= 400        : sigma1=45, sigma2=10   (infeasible)
+    demand_schedule: List[Tuple[int, float, float]] = dataclasses.field(
+        default_factory=lambda: [(0, 40.0, 10.0), (200, 30.0, 10.0), (400, 45.0, 10.0)]
+    )
 
     # Utility params (Table I)
     a: float = 0.9
@@ -73,7 +83,7 @@ class ExperimentConfig:
     llm_parse_retry: int = 1  # retry once with repair prompt
 
     # Synthetic environment model (tunable)
-    eff1_mbps_per_prb: float = 0.3125  # 64 PRB -> 20 Mbps; 96 PRB -> 30 Mbps; 128 PRB -> 40 Mbps
+    eff1_mbps_per_prb: float = 0.305  # ~64 PRB -> 19.5 Mbps; ~96 PRB -> 29.3 Mbps; 128 PRB -> 39.0 Mbps
     eff2_mbps_per_prb: float = 0.5
     # Hard caps (Mbps). Effective target is min(demand, hard_cap); None means +inf.
     cap1_hard_mbps: Optional[float] = 45.0
@@ -87,6 +97,13 @@ class ExperimentConfig:
     # "Soft two-stage" waste penalty (only enabled for t >= baseline_start_time)
     lambda_waste: float = 1.0
     waste_eps: float = 1e-6
+    # Soft-score (shortfall) penalty settings.
+    use_soft_score: bool = True
+    soft_p: int = 2
+    lambda1: float = 0.1
+    lambda2: float = 6.0
+    soft_enable_time: int = 200
+    schedule_margin_prb: int = 8
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -99,6 +116,29 @@ class ExperimentConfig:
 
     def with_overrides(self, **kwargs: Any) -> "ExperimentConfig":
         return dataclasses.replace(self, **kwargs)
+
+    def sigma_at(self, t: int) -> Tuple[float, float]:
+        """Return (sigma1(t), sigma2(t)) from demand_schedule (piecewise-constant)."""
+
+        tt = int(t)
+        schedule: Sequence[Sequence[object]] = self.demand_schedule or [(0, self.sigma1, self.sigma2)]
+        best_t0 = None
+        best_s1 = float(self.sigma1)
+        best_s2 = float(self.sigma2)
+        for entry in schedule:
+            if len(entry) < 3:
+                continue
+            try:
+                t0 = int(entry[0])
+                s1 = float(entry[1])
+                s2 = float(entry[2])
+            except Exception:
+                continue
+            if t0 <= tt and (best_t0 is None or t0 >= best_t0):
+                best_t0 = t0
+                best_s1 = s1
+                best_s2 = s2
+        return best_s1, best_s2
 
 
 def _try_import_yaml():
