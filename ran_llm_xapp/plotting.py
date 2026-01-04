@@ -7,6 +7,43 @@ from .config import ExperimentConfig
 from .metrics import moving_average_trailing
 
 
+def _ceil_to_step(x: float, step: int) -> int:
+    if step <= 0:
+        raise ValueError("step must be positive")
+    return int(math.ceil(float(x) / float(step)) * step)
+
+
+def _fig4_ymax(cfg: ExperimentConfig, *, tick_step: int = 5) -> int:
+    """Return a common y-axis max for Fig.4 plots (start from 0, tick step fixed)."""
+
+    schedule = cfg.demand_schedule or [(0, cfg.sigma1, cfg.sigma2)]
+    sigmas1 = [float(cfg.sigma1)]
+    sigmas2 = [float(cfg.sigma2)]
+    for entry in schedule:
+        if not isinstance(entry, (list, tuple)) or len(entry) < 3:
+            continue
+        try:
+            sigmas1.append(float(entry[1]))
+            sigmas2.append(float(entry[2]))
+        except Exception:
+            continue
+
+    max_sigma1 = max(sigmas1) if sigmas1 else float(cfg.sigma1)
+    max_sigma2 = max(sigmas2) if sigmas2 else float(cfg.sigma2)
+
+    # Match env.py soft caps: hat1 <= eff_cap1 + 2.0; hat2 <= eff_cap2 + 1.5.
+    cap1 = max_sigma1 if cfg.cap1_hard_mbps is None else min(max_sigma1, float(cfg.cap1_hard_mbps))
+    cap2 = max_sigma2 if cfg.cap2_hard_mbps is None else min(max_sigma2, float(cfg.cap2_hard_mbps))
+    ymax = max(cap1 + 2.0, cap2 + 1.5, 10.0)
+    return max(tick_step, _ceil_to_step(ymax, tick_step))
+
+
+def _apply_fig4_yaxis(ax, *, cfg: ExperimentConfig, tick_step: int = 5) -> None:
+    ymax = _fig4_ymax(cfg, tick_step=tick_step)
+    ax.set_ylim(0.0, float(ymax))
+    ax.set_yticks(list(range(0, int(ymax) + 1, int(tick_step))))
+
+
 def _demand_change_times(cfg: ExperimentConfig) -> List[int]:
     """Return demand schedule change times strictly after baseline_start_time."""
 
@@ -86,6 +123,7 @@ def plot_fig4_grid(
         ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
         for t0 in _demand_change_times(cfg):
             ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
+        _apply_fig4_yaxis(ax, cfg=cfg, tick_step=5)
         ax.set_title(f"{_panel_label(i)} {method}")
         ax.grid(True, alpha=0.3)
         if (i % ncols) == 0:
@@ -133,6 +171,7 @@ def plot_fig4_single(
     ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0, label="allocation starts")
     for t0 in _demand_change_times(cfg):
         ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0, label="demand change")
+    _apply_fig4_yaxis(ax, cfg=cfg, tick_step=5)
     ax.set_title(method)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Measured data rate (Mbps)")
