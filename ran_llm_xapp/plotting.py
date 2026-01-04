@@ -7,6 +7,11 @@ from .config import ExperimentConfig
 from .metrics import moving_average_trailing
 
 
+# Explicit UE colors (paper-style, consistent across machines/styles)
+UE1_COLOR = "#000080"  # navy
+UE2_COLOR = "#B22222"  # firebrick
+
+
 def _ceil_to_step(x: float, step: int) -> int:
     if step <= 0:
         raise ValueError("step must be positive")
@@ -117,8 +122,8 @@ def plot_fig4_grid(
         ue1 = list(res["hat_sigma1"])
         ue2 = list(res["hat_sigma2"])
 
-        ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5)
-        ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5)
+        ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5, color=UE1_COLOR)
+        ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5, color=UE2_COLOR)
         ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
         ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
         for t0 in _demand_change_times(cfg):
@@ -165,8 +170,8 @@ def plot_fig4_single(
     ue2 = list(result["hat_sigma2"])
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 4))
-    ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5)
-    ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5)
+    ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5, color=UE1_COLOR)
+    ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5, color=UE2_COLOR)
     ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0, label="slice init")
     ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0, label="allocation starts")
     for t0 in _demand_change_times(cfg):
