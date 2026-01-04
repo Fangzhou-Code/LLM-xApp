@@ -16,9 +16,9 @@ class ExperimentConfig:
     - The three-stage allocation timeline is implemented in the runner:
         (i)  0~slice_init_time: fixed PRB split (defaults 96/32) → ~30/~10 Mbps
         (ii) slice_init_time~baseline_start_time: evenly split (64/64) → ~20/~10 Mbps
-        (iii) baseline_start_time~end: method policy takes effect (equal/proportional/random/llm)
+        (iii) baseline_start_time~end: method policy takes effect (equal/random/proportional/tnas/oracle)
     - UE2 has a tight application-layer cap (cap2≈10 Mbps) and high per-PRB efficiency,
-      so that llm/proportional can allocate fewer PRBs to UE2 while still keeping it near 10 Mbps.
+      so that TNAS/proportional can allocate fewer PRBs to UE2 while still keeping it near 10 Mbps.
     """
 
     # Time
@@ -78,9 +78,12 @@ class ExperimentConfig:
     Tem_delta: float = 0.05
     in_context_top_n: int = 5
     in_context_n_examples: int = 3
-    llm_max_tokens: int = 150
+    # TNAS outputs a JSON object with Top-N candidates (each with a short "reason").
+    # 150 tokens is often insufficient and can lead to truncated / invalid JSON.
+    llm_max_tokens: int = 400
     llm_timeout_s: int = 60
     llm_parse_retry: int = 1  # retry once with repair prompt
+    tnas_top_n: int = 8
 
     # Synthetic environment model (tunable)
     eff1_mbps_per_prb: float = 0.305  # ~64 PRB -> 19.5 Mbps; ~96 PRB -> 29.3 Mbps; 128 PRB -> 39.0 Mbps

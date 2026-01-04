@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .config import ExperimentConfig
 
@@ -37,6 +37,78 @@ def effective_cap_mbps(sigma_mbps: float, hard_cap_mbps: Optional[float]) -> flo
     if hard_cap_mbps is None:
         return float(sigma_mbps)
     return float(min(sigma_mbps, hard_cap_mbps))
+
+
+def score_allocation_proxy(
+    cfg: ExperimentConfig,
+    *,
+    t: int,
+    sigma1: float,
+    sigma2: float,
+    prb1: int,
+    prb2: int,
+) -> Tuple[float, Dict[str, float]]:
+    """Myopic proxy score for a given PRB allocation (higher is better).
+
+    This is used by TNAS (local re-ranking) and Oracle (exact enumeration) to ensure
+    both methods use the same evaluation logic.
+
+    Proxy throughput uses a deterministic ideal model (no noise):
+      ideal_sigma_s = min(eff_cap_s, eff_s * prb_s)
+    where eff_cap_s = min(sigma_s, cap_s_hard) (cap_s_hard=None => +inf).
+
+    Proxy V_k mimics Eq.(8) by assuming the per-second mismatch is constant over the
+    half-window [t_k - Tw/2, t_k]:
+      sum(hatσ - σ) ≈ (Tw//2 + 1) * (ideal_sigma - sigma)
+
+    Soft score:
+      V_k_soft_proxy = V_k_proxy - lambda1*shortfall1^p - lambda2*shortfall2^p
+    where shortfall_s = max(0, eff_cap_s - ideal_sigma_s), enabled for t>=soft_enable_time.
+    """
+
+    g = get_g_function(cfg)
+    tt = int(t)
+    s1 = float(sigma1)
+    s2 = float(sigma2)
+    r1 = max(0, int(prb1))
+    r2 = max(0, int(prb2))
+
+    eff_cap1 = effective_cap_mbps(s1, cfg.cap1_hard_mbps)
+    eff_cap2 = effective_cap_mbps(s2, cfg.cap2_hard_mbps)
+    ideal1 = min(float(eff_cap1), float(cfg.eff1_mbps_per_prb) * float(r1))
+    ideal2 = min(float(eff_cap2), float(cfg.eff2_mbps_per_prb) * float(r2))
+
+    half = int(cfg.Tw // 2)
+    win_len = float(half + 1)
+    scale = (2.0 / float(cfg.Tw)) * win_len
+    x1 = scale * (ideal1 - s1)
+    x2 = scale * (ideal2 - s2)
+    V_k_proxy = (float(cfg.beta1) * g(float(x1))) + float(cfg.gamma1) + (float(cfg.beta2) * g(float(x2))) + float(cfg.gamma2)
+
+    shortfall1 = max(0.0, float(eff_cap1) - float(ideal1))
+    shortfall2 = max(0.0, float(eff_cap2) - float(ideal2))
+    penalty = 0.0
+    if bool(cfg.use_soft_score) and tt >= int(cfg.soft_enable_time):
+        p = int(cfg.soft_p)
+        penalty = -(
+            float(cfg.lambda1) * float(shortfall1**p)
+            + float(cfg.lambda2) * float(shortfall2**p)
+        )
+
+    V_k_soft_proxy = float(V_k_proxy) + float(penalty)
+    score = float(V_k_soft_proxy) if bool(cfg.use_soft_score) else float(V_k_proxy)
+    extra = {
+        "V_k_proxy": float(V_k_proxy),
+        "V_k_soft_proxy": float(V_k_soft_proxy),
+        "ideal_sigma1": float(ideal1),
+        "ideal_sigma2": float(ideal2),
+        "eff_cap1": float(eff_cap1),
+        "eff_cap2": float(eff_cap2),
+        "shortfall1": float(shortfall1),
+        "shortfall2": float(shortfall2),
+        "penalty": float(penalty),
+    }
+    return score, extra
 
 
 def action_to_prbs(action: Tuple[int, int], R_total: int) -> Tuple[int, int]:

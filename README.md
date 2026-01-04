@@ -4,8 +4,8 @@
 
 关键点：
 - **不依赖** OAIC testbed / srsRAN / O-RAN 组件
-- 严格实现论文关键定义：Utility(式(1)(2))、Reliability(滑窗 Tw)、动作到 PRB 映射(式(7) + 超预算修正)、评价函数(式(8), 默认 `g(x)=-x^2`)、以及 LLM-OPRO（Algorithm 1 的历史排序 + 温度衰减 + in-context）
-- 实现 4 个方法：`random` / `equal` / `proportional` / `llm`（LLM-OPRO）
+- 严格实现论文关键定义：Utility(式(1)(2))、Reliability(滑窗 Tw)、动作到 PRB 映射(式(7) + 超预算修正)、评价函数(式(8), 默认 `g(x)=-x^2`)
+- 实现 5 个方法：`equal` / `random` / `proportional` / `tnas`（Top-N Action Sampling）/ `oracle`（Exact-Soft-Opt）
 
 ## 安装
 
@@ -21,31 +21,36 @@ python3 -m pip install -e .
 
 命令入口：
 ```bash
-python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/run1
+python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/run1 \
+  --llm-runs stub:stub
 ```
 
 至少 3 个 methods 子集示例：
 ```bash
-# 只跑 llm
-python3 -m scripts.run_experiments --methods llm --seed 0 --out outputs/llm_only --provider stub
+# 只跑 tnas（用纯本地 stub）
+python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_only \
+  --llm-runs stub:stub
 
 # 跑 equal + proportional
 python3 -m scripts.run_experiments --methods equal proportional --seed 0 --out outputs/eq_prop
 
 # 跑全部（默认推荐：stub，无需 key 也能出图）
-python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/all_stub --provider stub
+python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/all_stub \
+  --llm-runs stub:stub
 ```
 
 在线 LLM（可选）：
 ```bash
-python3 -m scripts.run_experiments --methods llm --seed 0 --out outputs/llm_openai --provider openai --model gpt-4o-mini
-python3 -m scripts.run_experiments --methods llm --seed 0 --out outputs/llm_deepseek --provider deepseek --model deepseek-chat
+python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_openai \
+  --llm-runs openai:gpt-4o
+python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_deepseek \
+  --llm-runs deepseek:deepseek-v3.2
 ```
 
-一条指令同时跑多个模型（会把每个模型视为一个独立的 `llm_*` 变体一起对比）：
+一条指令同时跑多个模型（会把每个模型视为一个独立的 `tnas_*` 变体一起对比）：
 ```bash
 python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/multi_llm \
-  --llm-runs openai:gpt-4o-mini deepseek:deepseek-chat stub:stub
+  --llm-runs openai:gpt-4o deepseek:deepseek-v3.2 stub:stub
 ```
 
 说明：
@@ -53,7 +58,7 @@ python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/multi_ll
 - `--llm-runs` 的每项支持两种写法：
   - `provider:model`（显式指定 provider）
   - `model`（使用 `--provider` 作为默认 provider）
-- 若启用 `--llm-runs`，则 `llm` 方法会按列表逐个运行，并输出 `timeseries_llm_<provider>_<model>.csv`（文件名会自动做安全化）。
+- 若启用 `--llm-runs` 且选择了 `tnas`，则 TNAS 会按列表逐个运行，并输出 `timeseries_tnas_<provider>_<model>.csv`（文件名会自动做安全化）。
 
 LLM 缓存目录（避免重复计费）可通过 `--cache-dir` 指定；同 prompt 命中缓存会直接复用 response。
 
@@ -87,10 +92,10 @@ export DEEPSEEK_API_KEY="..."
 
 每次运行输出到 `--out` 指定目录，至少包含：
 - `timeseries_<method>.csv`：包含 `t, method, prb1, prb2, sigma1, sigma2, eff_cap1, eff_cap2, shortfall1, shortfall2, prb2_min_est, waste, penalty, V_k_soft, hat_sigma1, hat_sigma2, u1, u2, theta1, theta2, sys_u, sys_theta`
-  - 当使用 `--llm-runs` 跑多个 LLM 时，会额外生成 `timeseries_llm_<provider>_<model>.csv`
+  - 当使用 `--llm-runs` 跑多个 TNAS 变体时，会额外生成 `timeseries_tnas_<provider>_<model>.csv`
 - 图4：
   - 每个方法/变体都会单独输出 `fig4_<method>.png`
-  - 额外输出 `fig4.png`：把本次运行产生的所有方法/变体放到**同一张组合图**（支持多个 llm 变体，子图数量会随之增加）
+  - 额外输出 `fig4.png`：把本次运行产生的所有方法/变体放到**同一张组合图**（支持多个 TNAS 变体，子图数量会随之增加）
 - 图5：
   - `fig5a_sys_utility.png`
   - `fig5b_sys_reliability.png`

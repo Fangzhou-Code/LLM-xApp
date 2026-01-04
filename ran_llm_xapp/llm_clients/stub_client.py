@@ -11,7 +11,7 @@ class StubLLMClient(LLMClient):
     """Heuristic stub that returns a valid JSON *candidate list* without any API key.
 
     It is intentionally simple and deterministic (given seed + prompt + temperature),
-    designed to mimic the 'llm improves UE1 after 200s while keeping UE2 near demand'
+    designed to mimic the 'tnas improves UE1 after 200s while keeping UE2 near demand'
     behavior in the synthetic environment.
     """
 
@@ -54,5 +54,5 @@ class StubLLMClient(LLMClient):
         for a1, a2 in base:
             a1 = max(1, min(128, int(a1 + jitter)))
             a2 = max(1, min(128, int(a2 - jitter)))
-            candidates.append({"a1": a1, "a2": a2})
-        return json.dumps(candidates)
+            candidates.append({"a1": a1, "a2": a2, "reason": "stub candidate"})
+        return json.dumps({"candidates": candidates})

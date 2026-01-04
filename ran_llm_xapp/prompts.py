@@ -149,3 +149,69 @@ Bad output:
 
 Now output ONLY the corrected JSON list:
 """
+
+
+def build_tnas_prompt(*, obs: PromptObservation, top_n: int) -> str:
+    """Build TNAS prompt: ask model for Top-N diverse candidates, no history/iteration."""
+
+    cap1_str = "None" if obs.cap1_hard_mbps is None else f"{obs.cap1_hard_mbps:.3f}"
+    cap2_str = "None" if obs.cap2_hard_mbps is None else f"{obs.cap2_hard_mbps:.3f}"
+    n = int(max(1, top_n))
+
+    return f"""You are generating candidate actions for a 5G RAN slicing controller (TNAS: Top-N Action Sampling).
+
+The controller will evaluate each candidate locally and execute the one with the highest score.
+Higher score is better. The score is based on:
+- Paper Eq.(8) V_k (with g(x)=-x^2), and
+- A soft shortfall penalty (enabled for t >= {obs.soft_enable_time}):
+    eff_cap_s = min(sigma_s, cap_s_hard)  (cap_s_hard=None means +inf)
+    shortfall_s = max(0, eff_cap_s - hat_sigma_s)
+    penalty = -lambda1 * (shortfall1^p) - lambda2 * (shortfall2^p)
+    V_k_soft = V_k + penalty
+
+Your job:
+- Output {n} DIVERSE candidate actions so the controller can pick a strong one.
+- Cover different allocation styles: UE1-prioritize, UE2-prioritize, balanced, and extreme edge cases.
+- Keep each reason VERY short (<= 6 words).
+
+Action constraints:
+- Each candidate must be an object: {{\"a1\": int, \"a2\": int, \"reason\": \"...\"}}
+- a1 and a2 must be integers in [1, 128].
+- Output MUST be STRICT JSON OBJECT with exactly one key \"candidates\".
+- \"candidates\" must be a JSON list with exactly {n} items.
+- Output ONLY JSON. No extra text, no markdown, no code fences.
+
+Current observation:
+- time t = {obs.t}
+- requested rates (Mbps): sigma1 = {obs.sigma1:.3f}, sigma2 = {obs.sigma2:.3f}
+- hard caps (Mbps): cap1_hard = {cap1_str}, cap2_hard = {cap2_str}
+- effective targets (Mbps): eff_cap1 = {obs.eff_cap1_mbps:.3f}, eff_cap2 = {obs.eff_cap2_mbps:.3f}
+- recent measured rate stats (Mbps):
+  - UE1: mean={obs.mean_hat_sigma1:.3f}, last={obs.last_hat_sigma1:.3f}
+  - UE2: mean={obs.mean_hat_sigma2:.3f}, last={obs.last_hat_sigma2:.3f}
+- current PRB allocation: prb1 = {obs.current_prb1}, prb2 = {obs.current_prb2}
+- current shortfalls (Mbps): shortfall1={obs.shortfall1:.3f}, shortfall2={obs.shortfall2:.3f}
+- soft-penalty params: p={obs.soft_p}, lambda1={obs.lambda1:.3f}, lambda2={obs.lambda2:.3f}
+- temperature = {obs.Tem_k:.3f}
+
+Now output ONLY the JSON object:
+"""
+
+
+def build_tnas_repair_prompt(*, bad_response: str, top_n: int) -> str:
+    n = int(max(1, top_n))
+    return f"""Your previous output was not valid JSON for TNAS.
+
+Rules:
+- Output STRICT JSON OBJECT ONLY.
+- Must be exactly: {{\"candidates\": [ ... ]}}
+- \"candidates\" must contain exactly {n} items.
+- Each item must have keys exactly: a1, a2, reason.
+- a1/a2 values must be integers in [1, 128].
+- No extra text.
+
+Bad output:
+{bad_response}
+
+Now output ONLY the corrected JSON object:
+"""

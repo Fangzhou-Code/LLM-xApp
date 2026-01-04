@@ -23,11 +23,12 @@ from ran_llm_xapp.metrics import (
 from ran_llm_xapp.plotting import plot_fig4_grid, plot_fig4_single, plot_fig5_bars, plot_fig5_sys_curve
 from ran_llm_xapp.policies import (
     EqualPolicy,
-    LLMOPROPolicy,
     Observation,
+    OraclePolicy,
     ProportionalPolicy,
     RandomPolicy,
     SlotOutcome,
+    TNASPolicy,
 )
 
 
@@ -35,7 +36,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("run_experiments")
 
 
-METHODS_ALL = ("random", "equal", "proportional", "llm")
+METHODS_ALL = ("equal", "random", "proportional", "tnas", "oracle")
 
 
 def _parse_methods(raw: Sequence[str]) -> List[str]:
@@ -82,6 +83,7 @@ def _parse_llm_runs(args: argparse.Namespace) -> List[Tuple[str, str]]:
         return [(provider_default, model_default)]
 
     runs: List[Tuple[str, str]] = []
+    warned_openao = False
     for spec in llm_runs_raw:
         spec = str(spec).strip()
         if not spec:
@@ -96,6 +98,10 @@ def _parse_llm_runs(args: argparse.Namespace) -> List[Tuple[str, str]]:
             provider = provider_default
             model = spec
 
+        if provider == "openao":
+            provider = "openai"
+            warned_openao = True
+
         if provider not in {"openai", "deepseek", "stub"}:
             raise SystemExit(f"Unknown provider in --llm-runs: {provider!r}")
         if not model:
@@ -107,6 +113,8 @@ def _parse_llm_runs(args: argparse.Namespace) -> List[Tuple[str, str]]:
     for r in runs:
         if r not in out:
             out.append(r)
+    if warned_openao:
+        logger.warning("Provider 'openao' was treated as 'openai' (typo tolerance).")
     return out
 
 
@@ -201,7 +209,9 @@ def _build_policy(
     if method == "random":
         # Policy RNG should not consume the env RNG sequence.
         return RandomPolicy(seed=seed + 12345)
-    if method == "llm":
+    if method == "oracle":
+        return OraclePolicy(cfg=cfg)
+    if method == "tnas":
         if llm_provider == "openai":
             client = OpenAIClient()
             if (not client.api_key) or (not getattr(client, "base_url", None)):
@@ -214,7 +224,7 @@ def _build_policy(
                 client = StubLLMClient(seed=seed + 333)
         else:
             client = StubLLMClient(seed=seed + 444)
-        return LLMOPROPolicy(cfg=cfg, llm_client=client, model=llm_model, cache=cache, seed=seed + 555)
+        return TNASPolicy(cfg=cfg, llm_client=client, model=llm_model, cache=cache, seed=seed + 555)
     raise RuntimeError(f"Unhandled method={method}")
 
 
@@ -309,7 +319,10 @@ def run_single_method(
                     recent_hat_sigma2=win2,
                 )
                 current_action = policy.select_action(obs)
-                current_prbs = action_to_prbs(current_action, cfg.R_total)
+                if method == "oracle":
+                    current_prbs = (int(current_action[0]), int(current_action[1]))
+                else:
+                    current_prbs = action_to_prbs(current_action, cfg.R_total)
 
             slot_start_t = t
             slot_k = int(t // cfg.reconfig_interval)
@@ -412,7 +425,12 @@ def run_single_method(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--methods", nargs="+", required=True, help="Methods to run: all | random equal proportional llm")
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        required=True,
+        help="Methods to run: all | equal random proportional tnas oracle",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=str, required=True)
     parser.add_argument("--provider", type=str, default="stub", choices=["openai", "deepseek", "stub"])
@@ -421,9 +439,9 @@ def main() -> None:
         "--llm-runs",
         nargs="+",
         default=None,
-        help="Optional: run llm with multiple models/providers. "
+        help="Optional: run TNAS with multiple models/providers. "
         "Each item is 'provider:model' or 'model' (uses --provider). "
-        "Example: --llm-runs openai:gpt-4o-mini deepseek:deepseek-chat",
+        "Example: --llm-runs openai:gpt-4o deepseek:deepseek-v3.2",
     )
     parser.add_argument("--reconfig-interval", type=int, default=None)
     parser.add_argument("--Tw", type=int, default=None)
@@ -459,29 +477,40 @@ def main() -> None:
 
     default_provider = str(args.provider)
     default_model = str(args.model) if args.model else _default_model_for_provider(default_provider)
-    llm_runs = _parse_llm_runs(args)
+
+    need_tnas = "tnas" in methods
+    if need_tnas and not args.llm_runs:
+        raise SystemExit("TNAS selected but --llm-runs was not provided. Example: --llm-runs openai:gpt-4o deepseek:deepseek-v3.2")
+    if (not need_tnas) and args.llm_runs:
+        logger.warning("--llm-runs was provided but TNAS is not selected; ignoring it.")
+        llm_runs = []
+    else:
+        llm_runs = _parse_llm_runs(args) if args.llm_runs else []
 
     results_by_method: Dict[str, Dict[str, List[float]]] = {}
     averages_by_method: Dict[str, Dict[str, float]] = {}
-    llm_variant_keys: List[str] = []
+    tnas_variant_keys: List[str] = []
+    display_name_by_key: Dict[str, str] = {}
 
     for method in methods:
         run_specs: List[Tuple[str, str, str]] = []
-        if method != "llm":
+        if method != "tnas":
             run_specs.append((method, default_provider, default_model))
+            if method == "oracle":
+                display_name_by_key[method] = "Oracle (Exact-Soft-Opt)"
+            else:
+                display_name_by_key[method] = method
         else:
             for prov, model in llm_runs:
-                if len(llm_runs) == 1:
-                    key = "llm"
-                else:
-                    key = f"llm_{prov}_{_sanitize_name(model)}"
-                llm_variant_keys.append(key)
+                key = f"tnas_{prov}_{_sanitize_name(model)}"
+                tnas_variant_keys.append(key)
+                display_name_by_key[key] = f"TNAS ({prov}:{model})"
                 run_specs.append((key, prov, model))
 
         for method_key, llm_provider, llm_model in run_specs:
             logger.info("Running method=%s ...", method_key)
             res = run_single_method(
-                method="llm" if method == "llm" else method,
+                method=method,
                 cfg=cfg,
                 seed=int(args.seed),
                 llm_provider=llm_provider,
@@ -569,11 +598,11 @@ def main() -> None:
 
     # Plotting
     methods_order: List[str] = []
-    baseline_keys = [k for k in ("random", "equal", "proportional") if k in results_by_method]
-    llm_keys = [k for k in llm_variant_keys if k in results_by_method]
+    baseline_keys = [k for k in ("equal", "random", "proportional", "oracle") if k in results_by_method]
+    tnas_keys = [k for k in tnas_variant_keys if k in results_by_method]
 
     methods_order.extend(baseline_keys)
-    for k in llm_keys:
+    for k in tnas_keys:
         if k not in methods_order:
             methods_order.append(k)
 
@@ -583,6 +612,7 @@ def main() -> None:
             cfg=cfg,
             method=k,
             result=results_by_method[k],
+            display_name=display_name_by_key.get(k, k),
             out_path=str(out_dir / f"fig4_{k}.png"),
         )
 
@@ -592,6 +622,7 @@ def main() -> None:
             cfg=cfg,
             results_by_method=results_by_method,
             methods_order=methods_order,
+            display_names=display_name_by_key,
             out_path=str(out_dir / "fig4.png"),
         )
 
@@ -603,6 +634,7 @@ def main() -> None:
         out_path=str(out_dir / "fig5a_sys_utility.png"),
         title="Fig.5a Smoothed System Utility",
         ylabel="System Utility (moving avg)",
+        display_names=display_name_by_key,
     )
     plot_fig5_sys_curve(
         cfg=cfg,
@@ -612,6 +644,7 @@ def main() -> None:
         out_path=str(out_dir / "fig5b_sys_reliability.png"),
         title="Fig.5b Smoothed System Reliability (Outage Fraction; lower is better)",
         ylabel="System Reliability θ (moving avg)",
+        display_names=display_name_by_key,
     )
 
     plot_fig5_bars(
@@ -621,6 +654,7 @@ def main() -> None:
         title=f"Fig.5c Time-averaged Utility (t≥{cfg.baseline_start_time}s)",
         ylabel="Utility (avg)",
         out_path=str(out_dir / "fig5c_avg_utility.png"),
+        display_names=display_name_by_key,
     )
     plot_fig5_bars(
         averages_by_method={
@@ -632,6 +666,7 @@ def main() -> None:
         title=f"Fig.5d Time-averaged Reliability θ (t≥{cfg.baseline_start_time}s; lower is better)",
         ylabel="Reliability θ (avg outage fraction)",
         out_path=str(out_dir / "fig5d_avg_reliability.png"),
+        display_names=display_name_by_key,
     )
 
     logger.info("Done. Outputs written to: %s", out_dir)

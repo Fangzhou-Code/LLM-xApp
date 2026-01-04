@@ -71,6 +71,7 @@ def plot_fig4_grid(
     cfg: ExperimentConfig,
     results_by_method: Mapping[str, Mapping[str, Sequence[float]]],
     methods_order: Sequence[str],
+    display_names: Mapping[str, str] | None = None,
     out_path: str,
 ) -> None:
     """Plot Fig.4-style grid (variable size): throughput curves for each method/variant."""
@@ -118,6 +119,7 @@ def plot_fig4_grid(
     for i, method in enumerate(methods_order):
         ax = flat_axes[i]
         res = results_by_method[method]
+        title_name = display_names.get(method, method) if display_names else method
         t = list(res["t"])
         ue1 = list(res["hat_sigma1"])
         ue2 = list(res["hat_sigma2"])
@@ -129,7 +131,7 @@ def plot_fig4_grid(
         for t0 in _demand_change_times(cfg):
             ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
         _apply_fig4_yaxis(ax, cfg=cfg, tick_step=5)
-        ax.set_title(f"{_panel_label(i)} {method}")
+        ax.set_title(f"{_panel_label(i)} {title_name}")
         ax.grid(True, alpha=0.3)
         if (i % ncols) == 0:
             ax.set_ylabel("Measured data rate (Mbps)")
@@ -156,6 +158,7 @@ def plot_fig4_single(
     cfg: ExperimentConfig,
     method: str,
     result: Mapping[str, Sequence[float]],
+    display_name: str | None = None,
     out_path: str,
 ) -> None:
     """Plot a single Fig.4-style panel for one method."""
@@ -177,7 +180,7 @@ def plot_fig4_single(
     for t0 in _demand_change_times(cfg):
         ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0, label="demand change")
     _apply_fig4_yaxis(ax, cfg=cfg, tick_step=5)
-    ax.set_title(method)
+    ax.set_title(display_name or method)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Measured data rate (Mbps)")
     ax.grid(True, alpha=0.3)
@@ -196,6 +199,7 @@ def plot_fig5_sys_curve(
     out_path: str,
     title: str,
     ylabel: str,
+    display_names: Mapping[str, str] | None = None,
 ) -> None:
     """Plot Fig.5a/5b style smoothed system curve."""
 
@@ -207,10 +211,11 @@ def plot_fig5_sys_curve(
     fig, ax = plt.subplots(1, 1, figsize=(10, 4))
     for method in methods_order:
         res = results_by_method[method]
+        label = display_names.get(method, method) if display_names else method
         t = list(res["t"])
         raw = list(res[series_key])
         smooth = moving_average_trailing(raw, cfg.smooth_window)
-        ax.plot(t, smooth, label=method, linewidth=1.7)
+        ax.plot(t, smooth, label=label, linewidth=1.7)
 
     ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
     ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
@@ -234,6 +239,7 @@ def plot_fig5_bars(
     title: str,
     ylabel: str,
     out_path: str,
+    display_names: Mapping[str, str] | None = None,
 ) -> None:
     """Plot grouped bar chart for UE1/UE2/System time-averaged metrics."""
 
@@ -248,8 +254,9 @@ def plot_fig5_bars(
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 4))
     for i, method in enumerate(methods_order):
+        label = display_names.get(method, method) if display_names else method
         vals = [averages_by_method[method][k] for k in groups]
-        ax.bar([xi + (i - (len(methods_order) - 1) / 2) * width for xi in x], vals, width=width, label=method)
+        ax.bar([xi + (i - (len(methods_order) - 1) / 2) * width for xi in x], vals, width=width, label=label)
 
     ax.set_xticks(x)
     ax.set_xticklabels(groups)

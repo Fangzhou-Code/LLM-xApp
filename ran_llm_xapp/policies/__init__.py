@@ -1,8 +1,9 @@
 from .base import Observation, Policy, SlotOutcome
 from .equal import EqualPolicy
-from .llm_opro import LLMOPROPolicy
+from .oracle import OraclePolicy
 from .proportional import ProportionalPolicy
 from .random import RandomPolicy
+from .tnas import TNASPolicy
 
 __all__ = [
     "Observation",
@@ -11,6 +12,6 @@ __all__ = [
     "EqualPolicy",
     "RandomPolicy",
     "ProportionalPolicy",
-    "LLMOPROPolicy",
+    "TNASPolicy",
+    "OraclePolicy",
 ]
-

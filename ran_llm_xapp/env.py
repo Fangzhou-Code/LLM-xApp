@@ -27,7 +27,7 @@ class SyntheticRANSliceEnv:
       The *control timeline* (pre-slice fixed split / init equal split / policy) is handled
       by the experiment runner; the env only maps (prb1, prb2) -> measured rates.
     - UE2 (S2) has a higher per-PRB efficiency and a cap near 10 Mbps; thus it can
-      meet its demand with relatively few PRBs, leaving room for llm/proportional
+      meet its demand with relatively few PRBs, leaving room for tnas/proportional
       to prioritize UE1 without catastrophically harming UE2 utility/reliability.
     - Light, correlated channel perturbation is modeled via AR(1) additive noise:
         x_t = rho * x_{t-1} + eps_t
