@@ -177,7 +177,20 @@ def _is_finite(x: float) -> bool:
 def reliability_outage_fraction(
     u_series: Sequence[float], *, threshold: float, Tw: int
 ) -> List[float]:
-    """Compute reliability θ_s^t as 'utility-below-threshold ratio' in a sliding window.
+    """Legacy name for outage θ (kept for backward compatibility).
+
+    Prefer `outage_theta_fraction()` which makes the direction explicit:
+    - outage_theta ∈ [0,1], lower is better
+    - reliability = 1 - outage_theta, higher is better
+    """
+
+    return outage_theta_fraction(u_series, threshold=threshold, Tw=Tw)
+
+
+def outage_theta_fraction(
+    u_series: Sequence[float], *, threshold: float, Tw: int
+) -> List[float]:
+    """Compute outage θ_s^t as 'utility-below-threshold ratio' in a sliding window.
 
     Paper definition:
       θ_s^t = ( sum_{τ=t-Tw/2}^{t+Tw/2} 1[ u_s^τ <= u_th_s ] ) / Tw
@@ -209,6 +222,20 @@ def reliability_outage_fraction(
         bad = sum(1 for u in window if u <= threshold)
         out.append(bad / len(window))
     return out
+
+
+def outage_theta_to_reliability(outage_theta: float) -> float:
+    """Convert outage fraction θ to reliability: reliability = 1 - θ (higher is better)."""
+
+    if not _is_finite(float(outage_theta)):
+        return float("nan")
+    return 1.0 - float(outage_theta)
+
+
+def reliability_from_outage_series(outage_theta_series: Sequence[float]) -> List[float]:
+    """Elementwise reliability = 1 - outage_theta (NaN/Inf preserved as NaN)."""
+
+    return [outage_theta_to_reliability(x) for x in outage_theta_series]
 
 
 def system_average(u1: float, u2: float, *, slice2_active: bool) -> float:
@@ -387,9 +414,12 @@ class TimeAverages:
     avg_u1: float
     avg_u2: float
     avg_sys_u: float
-    avg_theta1: float
-    avg_theta2: float
-    avg_sys_theta: float
+    avg_outage_theta1: float
+    avg_outage_theta2: float
+    avg_system_outage_theta: float
+    avg_reliability1: float
+    avg_reliability2: float
+    avg_system_reliability: float
 
 
 def _mean_ignore_nan(xs: Iterable[float]) -> float:
@@ -402,20 +432,31 @@ def compute_time_averages(
     *,
     u1: Sequence[float],
     u2: Sequence[float],
-    theta1: Sequence[float],
-    theta2: Sequence[float],
+    outage_theta1: Sequence[float],
+    outage_theta2: Sequence[float],
     sys_u: Sequence[float],
-    sys_theta: Sequence[float],
+    system_outage_theta: Sequence[float],
     start_t: int,
 ) -> TimeAverages:
-    """Compute time-averaged metrics over t ∈ [start_t, T_end]."""
+    """Compute time-averaged metrics over t ∈ [start_t, T_end].
+
+    Notes:
+    - outage_theta is the outage fraction θ (lower is better).
+    - reliability = 1 - outage_theta (higher is better).
+    """
 
     start_idx = max(0, int(start_t // cfg.dt))
+    reliability1 = reliability_from_outage_series(outage_theta1)
+    reliability2 = reliability_from_outage_series(outage_theta2)
+    system_reliability = reliability_from_outage_series(system_outage_theta)
     return TimeAverages(
         avg_u1=_mean_ignore_nan(u1[start_idx:]),
         avg_u2=_mean_ignore_nan(u2[start_idx:]),
         avg_sys_u=_mean_ignore_nan(sys_u[start_idx:]),
-        avg_theta1=_mean_ignore_nan(theta1[start_idx:]),
-        avg_theta2=_mean_ignore_nan(theta2[start_idx:]),
-        avg_sys_theta=_mean_ignore_nan(sys_theta[start_idx:]),
+        avg_outage_theta1=_mean_ignore_nan(outage_theta1[start_idx:]),
+        avg_outage_theta2=_mean_ignore_nan(outage_theta2[start_idx:]),
+        avg_system_outage_theta=_mean_ignore_nan(system_outage_theta[start_idx:]),
+        avg_reliability1=_mean_ignore_nan(reliability1[start_idx:]),
+        avg_reliability2=_mean_ignore_nan(reliability2[start_idx:]),
+        avg_system_reliability=_mean_ignore_nan(system_reliability[start_idx:]),
     )

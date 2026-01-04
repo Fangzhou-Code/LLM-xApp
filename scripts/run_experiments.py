@@ -17,7 +17,8 @@ from ran_llm_xapp.metrics import (
     compute_utilities,
     effective_cap_mbps,
     evaluate_V_k_soft,
-    reliability_outage_fraction,
+    outage_theta_fraction,
+    reliability_from_outage_series,
     system_average,
 )
 from ran_llm_xapp.plotting import plot_fig4_grid, plot_fig4_single, plot_fig5_bars, plot_fig5_sys_curve
@@ -395,15 +396,18 @@ def run_single_method(
                 )
             )
 
-    theta1_series = reliability_outage_fraction(u1_series, threshold=cfg.u_th1, Tw=cfg.Tw)
-    theta2_series = reliability_outage_fraction(u2_series, threshold=cfg.u_th2, Tw=cfg.Tw)
+    outage_theta1_series = outage_theta_fraction(u1_series, threshold=cfg.u_th1, Tw=cfg.Tw)
+    outage_theta2_series = outage_theta_fraction(u2_series, threshold=cfg.u_th2, Tw=cfg.Tw)
     sys_u_series = [
         system_average(u1_series[i], u2_series[i], slice2_active=slice2_active_series[i]) for i in range(len(times))
     ]
-    sys_theta_series = [
-        system_average(theta1_series[i], theta2_series[i], slice2_active=slice2_active_series[i])
+    system_outage_theta_series = [
+        system_average(outage_theta1_series[i], outage_theta2_series[i], slice2_active=slice2_active_series[i])
         for i in range(len(times))
     ]
+    reliability1_series = reliability_from_outage_series(outage_theta1_series)
+    reliability2_series = reliability_from_outage_series(outage_theta2_series)
+    system_reliability_series = reliability_from_outage_series(system_outage_theta_series)
 
     return {
         "t": [float(t) for t in times],
@@ -419,10 +423,18 @@ def run_single_method(
         "shortfall2": shortfall2_series,
         "u1": u1_series,
         "u2": u2_series,
-        "theta1": theta1_series,
-        "theta2": theta2_series,
+        # Legacy names kept for CSV backward-compat (θ is outage fraction).
+        "theta1": outage_theta1_series,
+        "theta2": outage_theta2_series,
         "sys_u": sys_u_series,
-        "sys_theta": sys_theta_series,
+        "sys_theta": system_outage_theta_series,
+        # Explicit outage / reliability series (preferred for new code + plots).
+        "outage_theta1": outage_theta1_series,
+        "outage_theta2": outage_theta2_series,
+        "system_outage_theta": system_outage_theta_series,
+        "reliability1": reliability1_series,
+        "reliability2": reliability2_series,
+        "system_reliability": system_reliability_series,
         "prb2_min_est": prb2_min_est_series,
         "waste": waste_series,
         "penalty": penalty_series,
@@ -551,10 +563,18 @@ def main() -> None:
                         "hat_sigma2": float(res["hat_sigma2"][i]),
                         "u1": float(res["u1"][i]),
                         "u2": float(res["u2"][i]),
+                        # Legacy θ fields (outage fraction; kept for backward-compat).
                         "theta1": float(res["theta1"][i]),
                         "theta2": float(res["theta2"][i]),
                         "sys_u": float(res["sys_u"][i]),
                         "sys_theta": float(res["sys_theta"][i]),
+                        # Explicit outage / reliability fields (preferred).
+                        "outage_theta1": float(res["outage_theta1"][i]),
+                        "outage_theta2": float(res["outage_theta2"][i]),
+                        "system_outage_theta": float(res["system_outage_theta"][i]),
+                        "reliability1": float(res["reliability1"][i]),
+                        "reliability2": float(res["reliability2"][i]),
+                        "system_reliability": float(res["system_reliability"][i]),
                     }
                 )
             write_csv(
@@ -582,6 +602,12 @@ def main() -> None:
                     "theta2",
                     "sys_u",
                     "sys_theta",
+                    "outage_theta1",
+                    "outage_theta2",
+                    "system_outage_theta",
+                    "reliability1",
+                    "reliability2",
+                    "system_reliability",
                 ],
                 rows=rows,
             )
@@ -590,19 +616,22 @@ def main() -> None:
                 cfg,
                 u1=res["u1"],
                 u2=res["u2"],
-                theta1=res["theta1"],
-                theta2=res["theta2"],
+                outage_theta1=res["outage_theta1"],
+                outage_theta2=res["outage_theta2"],
                 sys_u=res["sys_u"],
-                sys_theta=res["sys_theta"],
+                system_outage_theta=res["system_outage_theta"],
                 start_t=cfg.baseline_start_time,
             )
             averages_by_method[method_key] = {
                 "UE1": float(avgs.avg_u1),
                 "UE2": float(avgs.avg_u2),
                 "System": float(avgs.avg_sys_u),
-                "UE1_theta": float(avgs.avg_theta1),
-                "UE2_theta": float(avgs.avg_theta2),
-                "System_theta": float(avgs.avg_sys_theta),
+                "UE1_outage_theta": float(avgs.avg_outage_theta1),
+                "UE2_outage_theta": float(avgs.avg_outage_theta2),
+                "System_outage_theta": float(avgs.avg_system_outage_theta),
+                "UE1_reliability": float(avgs.avg_reliability1),
+                "UE2_reliability": float(avgs.avg_reliability2),
+                "System_reliability": float(avgs.avg_system_reliability),
             }
 
     # Plotting
@@ -649,10 +678,21 @@ def main() -> None:
         cfg=cfg,
         results_by_method=results_by_method,
         methods_order=methods_order,
-        series_key="sys_theta",
+        series_key="system_reliability",
         out_path=str(out_dir / "fig5b_sys_reliability.png"),
-        title="Fig.5b Smoothed System Reliability (Outage Fraction; lower is better)",
-        ylabel="System Reliability θ (moving avg)",
+        title="Fig.5b Smoothed System Reliability (reliability = 1 - outage θ)",
+        ylabel="System Reliability (moving avg; higher is better)",
+        display_names=display_name_by_key,
+    )
+    # Optional debug view (outage fraction; lower is better).
+    plot_fig5_sys_curve(
+        cfg=cfg,
+        results_by_method=results_by_method,
+        methods_order=methods_order,
+        series_key="system_outage_theta",
+        out_path=str(out_dir / "fig5b_outage_theta.png"),
+        title="Fig.5b (debug) Smoothed System Outage θ (outage fraction)",
+        ylabel="System Outage θ (moving avg; lower is better)",
         display_names=display_name_by_key,
     )
 
@@ -667,14 +707,35 @@ def main() -> None:
     )
     plot_fig5_bars(
         averages_by_method={
-            m: {"UE1": averages_by_method[m]["UE1_theta"], "UE2": averages_by_method[m]["UE2_theta"], "System": averages_by_method[m]["System_theta"]}
+            m: {
+                "UE1": averages_by_method[m]["UE1_reliability"],
+                "UE2": averages_by_method[m]["UE2_reliability"],
+                "System": averages_by_method[m]["System_reliability"],
+            }
             for m in methods_order
         },
         methods_order=methods_order,
         keys=["UE1", "UE2", "System"],
-        title=f"Fig.5d Time-averaged Reliability θ (t≥{cfg.baseline_start_time}s; lower is better)",
-        ylabel="Reliability θ (avg outage fraction)",
+        title=f"Fig.5d Time-averaged Reliability (t≥{cfg.baseline_start_time}s; higher is better)",
+        ylabel="Reliability (avg; higher is better)",
         out_path=str(out_dir / "fig5d_avg_reliability.png"),
+        display_names=display_name_by_key,
+    )
+    # Optional debug bars (outage fraction; lower is better).
+    plot_fig5_bars(
+        averages_by_method={
+            m: {
+                "UE1": averages_by_method[m]["UE1_outage_theta"],
+                "UE2": averages_by_method[m]["UE2_outage_theta"],
+                "System": averages_by_method[m]["System_outage_theta"],
+            }
+            for m in methods_order
+        },
+        methods_order=methods_order,
+        keys=["UE1", "UE2", "System"],
+        title=f"Fig.5d (debug) Time-averaged Outage θ (t≥{cfg.baseline_start_time}s; lower is better)",
+        ylabel="Outage θ (avg; lower is better)",
+        out_path=str(out_dir / "fig5d_outage_theta.png"),
         display_names=display_name_by_key,
     )
 

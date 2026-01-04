@@ -94,7 +94,9 @@ export DEEPSEEK_API_KEY="..."
 ## 输出文件说明
 
 每次运行输出到 `--out` 指定目录，至少包含：
-- `timeseries_<method>.csv`：包含 `t, method, prb1, prb2, sigma1, sigma2, eff_cap1, eff_cap2, shortfall1, shortfall2, prb2_min_est, waste, penalty, V_k_soft, hat_sigma1, hat_sigma2, u1, u2, theta1, theta2, sys_u, sys_theta`
+- `timeseries_<method>.csv`：包含 `t, method, prb1, prb2, sigma1, sigma2, eff_cap1, eff_cap2, shortfall1, shortfall2, prb2_min_est, waste, penalty, V_k_soft, hat_sigma1, hat_sigma2, u1, u2`
+  - legacy：`theta1, theta2, sys_theta`（这里的 `θ` 是 **outage fraction**，越小越好；保留用于兼容）
+  - 推荐使用：`outage_theta1, outage_theta2, system_outage_theta, reliability1, reliability2, system_reliability`，且满足 `reliability = 1 - outage_theta`
   - 当使用 `--llm-runs` 跑多个 TNAS 变体时，会额外生成 `timeseries_tnas_<provider>_<model>.csv`
 - 图4：
   - 每个方法/变体都会单独输出 `fig4_<method>.png`
@@ -102,8 +104,10 @@ export DEEPSEEK_API_KEY="..."
 - 图5：
   - `fig5a_sys_utility.png`
   - `fig5b_sys_reliability.png`
+  - `fig5b_outage_theta.png`（debug：outage θ，越低越好）
   - `fig5c_avg_utility.png`
   - `fig5d_avg_reliability.png`
+  - `fig5d_outage_theta.png`（debug：outage θ，越低越好）
 - `config_used.yaml`（若未安装 PyYAML 则为 `config_used.json`）
 
 ## 时间线与 system 指标
@@ -112,12 +116,15 @@ export DEEPSEEK_API_KEY="..."
   - `t∈[0,100)`：未启用 slicing 控制的默认阶段，固定 PRB 分配（默认 `prb1=96, prb2=32`）→ UE1≈30 Mbps、UE2≈10 Mbps
   - `t∈[100,200)`：slice init + 初始化均分阶段，固定 `prb1=prb2=64` → UE1≈20 Mbps、UE2≈10 Mbps
   - `t≥200`：方法策略生效并进入对比阶段；同时启用 **demand schedule**（默认：`sigma1` 在 `t=200` 变为 30、在 `t=400` 变为 45；`sigma2` 保持 10），用于制造 “可行→不可行” 的切换与 trade-off
-- **system utility / system reliability**：从 `t=0` 起对 UE1/UE2 两个 slice 的 `u_s^t` / `θ_s^t` 做**简单平均**（未加权）。
+- **system 指标聚合方式**：从 `t=0` 起对 UE1/UE2 两个 slice 做**简单平均**（未加权）
+  - `system_outage_theta(t) = mean(outage_theta1(t), outage_theta2(t))`
+  - `system_reliability(t) = 1 - system_outage_theta(t)`
 - **soft score（V_k_soft）**：在论文 Eq.(8) 的 `V_k` 基础上加入短缺惩罚（默认 `t>=200` 启用）：
   - `eff_cap_s = min(sigma_s, cap_s_hard)`（`cap_s_hard=None` 视为 +inf）
   - `shortfall_s = max(0, eff_cap_s - mean_hat_sigma_s)`
   - `V_k_soft = V_k - lambda1*shortfall1^p - lambda2*shortfall2^p`（默认 `p=2, lambda1=0.1, lambda2=6.0`）
-- **Reliability θ**：按论文定义为滑窗内 `u_s^τ <= u_th_s` 的比例（本实现将窗口越界部分截断，并除以有效样本数；详见 `ran_llm_xapp/metrics.py`）。
+- **outage θ（违约占比）**：按论文定义为滑窗内 `u_s^τ <= u_th_s` 的比例（范围[0,1]，越小越好；详见 `ran_llm_xapp/metrics.py`）。
+- **reliability（对外展示）**：`reliability = 1 - outage_theta`（范围[0,1]，越大越好）。图5b/5d 默认画的是 reliability。
 - 图5 的 time-averaged 统计默认在 **t ∈ [baseline_start_time, T_end]** 上计算（强调 t=200 后策略差异）。
 
 ## 运行测试

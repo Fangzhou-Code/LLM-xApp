@@ -249,21 +249,35 @@ def plot_fig5_bars(
     import matplotlib.pyplot as plt
 
     groups = list(keys)  # e.g., ["UE1","UE2","System"]
-    x = list(range(len(groups)))
-    width = 0.18
+    n_groups = len(groups)
+    n_methods = max(1, len(methods_order))
+    x = list(range(n_groups))
 
-    fig, ax = plt.subplots(1, 1, figsize=(10, 4))
+    # Avoid overlap when many methods are plotted (e.g., multiple TNAS variants):
+    # keep the total span of bars within each group < 1.0 (group spacing).
+    group_span = 0.82
+    width = min(0.22, group_span / float(n_methods))
+    offsets = [(i - (n_methods - 1) / 2.0) * width for i in range(n_methods)]
+
+    fig_w = max(10.0, 7.0 + 0.9 * float(n_methods))
+    fig, ax = plt.subplots(1, 1, figsize=(fig_w, 4.2))
     for i, method in enumerate(methods_order):
         label = display_names.get(method, method) if display_names else method
-        vals = [averages_by_method[method][k] for k in groups]
-        ax.bar([xi + (i - (len(methods_order) - 1) / 2) * width for xi in x], vals, width=width, label=label)
+        vals = [float(averages_by_method[method][k]) for k in groups]
+        ax.bar([xi + offsets[i] for xi in x], vals, width=float(width), label=label)
 
     ax.set_xticks(x)
-    ax.set_xticklabels(groups)
+    ax.set_xticklabels(groups, fontsize=11)
     ax.set_title(title)
     ax.set_ylabel(ylabel)
-    ax.grid(True, axis="y", alpha=0.3)
-    ax.legend(ncol=2)
-    fig.tight_layout()
+    ax.set_axisbelow(True)
+    ax.grid(True, axis="y", alpha=0.25)
+
+    # Put legend above to keep bars uncluttered.
+    ncol = min(4, n_methods)
+    ax.legend(loc="upper center", ncol=ncol, bbox_to_anchor=(0.5, 1.22), frameon=False)
+    ax.margins(x=0.08)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
