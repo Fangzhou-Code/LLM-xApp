@@ -1,6 +1,7 @@
 .env
 __pycache__/
 .pycache/
+.pycache_local
 outputs/
 *.pyc
 *.pyo
@@ -8,4 +9,5 @@ outputs/
 .pytest_cache/
 .mypy_cache/
 .DS_Store
-
+*.pdf
+output.md
