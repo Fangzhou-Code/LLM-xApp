@@ -10,7 +10,7 @@ from typing import Dict, List, Mapping, Sequence, Tuple
 from ran_llm_xapp.config import ExperimentConfig, save_config_prefer_yaml
 from ran_llm_xapp.env import SyntheticRANSliceEnv
 from ran_llm_xapp.io_utils import PromptResponseCache, ensure_dir, load_dotenv, write_csv
-from ran_llm_xapp.llm_clients import DeepSeekClient, OpenAIClient, StubLLMClient
+from ran_llm_xapp.llm_clients import DeepSeekClient, OpenAIClient, StubLLMClient, GoogleClient
 from ran_llm_xapp.metrics import (
     action_to_prbs,
     compute_time_averages,
@@ -20,10 +20,11 @@ from ran_llm_xapp.metrics import (
     outage_theta_fraction,
     reliability_from_outage_series,
     system_average,
+    system_utility_weight,
+    system_utility_weighted,
 )
 from ran_llm_xapp.plotting import plot_fig4_grid, plot_fig4_single, plot_fig5_bars, plot_fig5_sys_curve
 from ran_llm_xapp.policies import (
-    CEMPolicy,
     EqualPolicy,
     Observation,
     OraclePolicy,
@@ -38,8 +39,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("run_experiments")
 
 
-METHODS_ALL = ("equal", "random", "proportional", "tnas", "cem")
-METHODS_VALID = tuple(list(METHODS_ALL) + ["oracle"])
+METHODS_ALL = ("equal", "random", "proportional")
+# Methods considered valid when explicitly provided (e.g., --methods tnas or oracle).
+METHODS_VALID = tuple(list(METHODS_ALL) + ["tnas", "oracle"])
 
 
 def _parse_methods(raw: Sequence[str]) -> List[str]:
@@ -74,6 +76,8 @@ def _default_model_for_provider(provider: str) -> str:
         return "gpt-4o-mini"
     if provider == "deepseek":
         return "deepseek-chat"
+    if provider == "google":
+        return "gemini-3-pro"
     return "stub"
 
 
@@ -107,7 +111,7 @@ def _parse_llm_runs(args: argparse.Namespace) -> List[Tuple[str, str]]:
             provider = "openai"
             warned_openao = True
 
-        if provider not in {"openai", "deepseek", "stub"}:
+        if provider not in {"openai", "deepseek", "google", "stub"}:
             raise SystemExit(f"Unknown provider in --llm-runs: {provider!r}")
         if not model:
             raise SystemExit("Model name cannot be empty in --llm-runs.")
@@ -216,9 +220,6 @@ def _build_policy(
         return RandomPolicy(seed=seed + 12345)
     if method == "oracle":
         return OraclePolicy(cfg=cfg)
-    if method == "cem":
-        # Budgeted black-box search baseline (no LLM).
-        return CEMPolicy(cfg=cfg, seed=seed + 54321)
     if method == "tnas":
         if llm_provider == "openai":
             client = OpenAIClient()
@@ -230,6 +231,11 @@ def _build_policy(
             if (not client.api_key) or (not getattr(client, "base_url", None)):
                 logger.warning("DEEPSEEK_API_KEY/DEEPSEEK_BASE_URL missing; falling back to stub provider.")
                 client = StubLLMClient(seed=seed + 333)
+        elif llm_provider == "google":
+            client = GoogleClient()
+            if (not client.api_key) or (not getattr(client, "base_url", None)):
+                logger.warning("GOOGLE_API_KEY/GOOGLE_BASE_URL missing; falling back to stub provider.")
+                client = StubLLMClient(seed=seed + 444)
         else:
             client = StubLLMClient(seed=seed + 444)
         return TNASPolicy(cfg=cfg, llm_client=client, model=llm_model, cache=cache, seed=seed + 555)
@@ -327,7 +333,7 @@ def run_single_method(
                     recent_hat_sigma2=win2,
                 )
                 current_action = policy.select_action(obs)
-                if method in {"oracle", "cem"}:
+                if method in {"oracle"}:
                     current_prbs = (int(current_action[0]), int(current_action[1]))
                 else:
                     current_prbs = action_to_prbs(current_action, cfg.R_total)
@@ -398,8 +404,15 @@ def run_single_method(
 
     outage_theta1_series = outage_theta_fraction(u1_series, threshold=cfg.u_th1, Tw=cfg.Tw)
     outage_theta2_series = outage_theta_fraction(u2_series, threshold=cfg.u_th2, Tw=cfg.Tw)
+    w1 = system_utility_weight(cfg)
     sys_u_series = [
-        system_average(u1_series[i], u2_series[i], slice2_active=slice2_active_series[i]) for i in range(len(times))
+        system_utility_weighted(
+            u1_series[i],
+            u2_series[i],
+            slice2_active=slice2_active_series[i],
+            weight1=w1,
+        )
+        for i in range(len(times))
     ]
     system_outage_theta_series = [
         system_average(outage_theta1_series[i], outage_theta2_series[i], slice2_active=slice2_active_series[i])
@@ -448,11 +461,11 @@ def main() -> None:
         "--methods",
         nargs="+",
         required=True,
-        help="Methods to run: all | all2 | equal random proportional tnas cem oracle",
+        help="Methods to run: all | all2 | equal random proportional tnas oracle",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=str, required=True)
-    parser.add_argument("--provider", type=str, default="stub", choices=["openai", "deepseek", "stub"])
+    parser.add_argument("--provider", type=str, default="stub", choices=["openai", "deepseek", "google", "stub"])
     parser.add_argument("--model", type=str, default=None, help="Model name (default depends on --provider)")
     parser.add_argument(
         "--llm-runs",
@@ -474,6 +487,16 @@ def main() -> None:
         logger.info("Loaded .env from: %s", dotenv_loaded)
 
     methods = _parse_methods(args.methods)
+    # Special-case: when the user passed `--methods all` and also provided `--llm-runs`,
+    # run the TNAS variants in addition to the baseline methods so large-model
+    # experiments are executed without changing the meaning of `all` for other uses.
+    try:
+        methods_raw = [m.lower() for m in args.methods]
+    except Exception:
+        methods_raw = []
+    if getattr(args, "llm_runs", None) and (len(methods_raw) == 1 and methods_raw[0] == "all") and ("tnas" not in methods):
+        methods.append("tnas")
+        logger.info("--llm-runs provided with --methods all: adding 'tnas' to methods to run LLM variants")
     out_dir = ensure_dir(args.out)
 
     cfg = ExperimentConfig()
@@ -517,8 +540,6 @@ def main() -> None:
             run_specs.append((method, default_provider, default_model))
             if method == "oracle":
                 display_name_by_key[method] = "Oracle (Exact-Soft-Opt)"
-            elif method == "cem":
-                display_name_by_key[method] = "CEM (budgeted)"
             else:
                 display_name_by_key[method] = method
         else:
@@ -636,7 +657,7 @@ def main() -> None:
 
     # Plotting
     methods_order: List[str] = []
-    baseline_keys = [k for k in ("equal", "random", "proportional", "cem", "oracle") if k in results_by_method]
+    baseline_keys = [k for k in ("equal", "random", "proportional", "oracle") if k in results_by_method]
     tnas_keys = [k for k in tnas_variant_keys if k in results_by_method]
 
     methods_order.extend(baseline_keys)

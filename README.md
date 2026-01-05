@@ -117,7 +117,8 @@ export DEEPSEEK_API_KEY="..."
   - `t∈[100,200)`：slice init + 初始化均分阶段，固定 `prb1=prb2=64` → UE1≈20 Mbps、UE2≈10 Mbps
   - `t≥200`：方法策略生效并进入对比阶段；同时启用 **demand schedule**（默认：`sigma1` 在 `t=200` 变为 30、在 `t=400` 变为 45；`sigma2` 保持 10），用于制造 “可行→不可行” 的切换与 trade-off
 - **system 指标聚合方式**：从 `t=0` 起对 UE1/UE2 两个 slice 做**简单平均**（未加权）
-  - `system_outage_theta(t) = mean(outage_theta1(t), outage_theta2(t))`
+  - `system_utility(t) = w1*u1(t) + (1-w1)*u2(t)`，其中默认 `w1 = beta1 / (beta1 + beta2)`
+  - `system_outage_theta(t) = mean(outage_theta1(t), outage_theta2(t))`（仍为简单平均）
   - `system_reliability(t) = 1 - system_outage_theta(t)`
 - **soft score（V_k_soft）**：在论文 Eq.(8) 的 `V_k` 基础上加入短缺惩罚（默认 `t>=200` 启用）：
   - `eff_cap_s = min(sigma_s, cap_s_hard)`（`cap_s_hard=None` 视为 +inf）

@@ -110,8 +110,8 @@ class ExperimentConfig:
     # Soft-score (shortfall) penalty settings.
     use_soft_score: bool = True
     soft_p: int = 2
-    lambda1: float = 0.1
-    lambda2: float = 6.0
+    lambda1: float = 6
+    lambda2: float = 1
     soft_enable_time: int = 200
     schedule_margin_prb: int = 8
 

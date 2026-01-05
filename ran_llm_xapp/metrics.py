@@ -246,6 +246,38 @@ def system_average(u1: float, u2: float, *, slice2_active: bool) -> float:
     return u1
 
 
+def system_utility_weight(cfg: ExperimentConfig) -> float:
+    """Default UE1 weight for system utility aggregation.
+
+    We align the utility aggregation with Eq.(8) slice weights by default:
+      w1 = beta1 / (beta1 + beta2)
+    """
+
+    denom = float(cfg.beta1) + float(cfg.beta2)
+    if denom <= 0.0:
+        return 0.5
+    w1 = float(cfg.beta1) / denom
+    # Clamp defensively in case of weird config values.
+    return float(max(0.0, min(1.0, w1)))
+
+
+def system_utility_weighted(
+    u1: float, u2: float, *, slice2_active: bool, weight1: float
+) -> float:
+    """System utility: priority-weighted average over slices.
+
+    Note: Reliability/outage "system" metrics may still use `system_average()` (unweighted).
+    """
+
+    w1 = float(weight1)
+    if not _is_finite(w1):
+        w1 = 0.5
+    w1 = float(max(0.0, min(1.0, w1)))
+    if slice2_active and _is_finite(u2):
+        return (w1 * u1) + ((1.0 - w1) * u2)
+    return u1
+
+
 def moving_average_trailing(series: Sequence[float], window: int) -> List[float]:
     """Trailing moving average with boundary truncation; ignores NaN/Inf values."""
 

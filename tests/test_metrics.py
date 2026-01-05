@@ -4,6 +4,8 @@ import unittest
 from ran_llm_xapp.config import ExperimentConfig
 from ran_llm_xapp.metrics import (
     outage_theta_fraction,
+    system_utility_weight,
+    system_utility_weighted,
     utility_s1_sigmoid,
     utility_s2_log_ratio,
 )
@@ -38,6 +40,20 @@ class TestMetrics(unittest.TestCase):
         theta = outage_theta_fraction(u, threshold=0.6, Tw=3)
         # At t=1, window covers all; NaN ignored -> [0.0,1.0] -> 1/2
         self.assertAlmostEqual(theta[1], 0.5, places=7)
+
+    def test_system_utility_weight_matches_betas(self) -> None:
+        cfg = ExperimentConfig()
+        w1 = system_utility_weight(cfg)
+        expected = float(cfg.beta1) / float(cfg.beta1 + cfg.beta2)
+        self.assertAlmostEqual(w1, expected, places=9)
+
+    def test_system_utility_weighted_interpolates(self) -> None:
+        # If UE1 is perfect and UE2 is terrible, system utility equals weight1.
+        u = system_utility_weighted(1.0, 0.0, slice2_active=True, weight1=0.7)
+        self.assertAlmostEqual(u, 0.7, places=9)
+        # If UE1 is terrible and UE2 is perfect, system utility equals (1-weight1).
+        u = system_utility_weighted(0.0, 1.0, slice2_active=True, weight1=0.7)
+        self.assertAlmostEqual(u, 0.3, places=9)
 
 
 if __name__ == "__main__":

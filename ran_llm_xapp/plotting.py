@@ -209,18 +209,46 @@ def plot_fig5_sys_curve(
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 4))
+
+    # Determine plotting start time (default: baseline_start_time)
+    start_t = int(cfg.baseline_start_time)
+
+    def _start_idx_from_t(t_series: Sequence[float], start_time: int) -> int:
+        for i, tv in enumerate(t_series):
+            try:
+                if float(tv) >= float(start_time):
+                    return i
+            except Exception:
+                continue
+        return 0
+
     for method in methods_order:
         res = results_by_method[method]
         label = display_names.get(method, method) if display_names else method
-        t = list(res["t"])
+        t_full = list(res["t"])
         raw = list(res[series_key])
         smooth = moving_average_trailing(raw, cfg.smooth_window)
-        ax.plot(t, smooth, label=label, linewidth=1.7)
 
-    ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
-    ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
+        start_idx = _start_idx_from_t(t_full, start_t)
+        # If start index is at or beyond available data, fall back to full series.
+        if start_idx >= len(t_full) or start_idx < 0:
+            t_plot = t_full
+            smooth_plot = smooth
+        else:
+            t_plot = t_full[start_idx:]
+            smooth_plot = smooth[start_idx:]
+
+        ax.plot(t_plot, smooth_plot, label=label, linewidth=1.7)
+
+    # Draw vertical markers only if they lie within plotted range
+    plotted_xlim = (start_t, None)
+    if cfg.slice_init_time >= start_t:
+        ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0)
+    if cfg.baseline_start_time >= start_t:
+        ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
     for t0 in _demand_change_times(cfg):
-        ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
+        if t0 >= start_t:
+            ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
     ax.set_title(title)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel(ylabel)
