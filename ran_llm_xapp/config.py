@@ -53,8 +53,8 @@ class ExperimentConfig:
     a: float = 0.9
     b: float = 6.5
     c: float = 5.0
-    u_th1: float = 0.6
-    u_th2: float = 0.96
+    u_th1: float = 0.7
+    u_th2: float = 0.3
 
     # Reliability window (seconds/samples)
     Tw: int = 20
@@ -114,6 +114,16 @@ class ExperimentConfig:
     lambda2: float = 1
     soft_enable_time: int = 200
     schedule_margin_prb: int = 8
+    # System reliability (severity-weighted) settings
+    # mode: 'legacy' | 'severity' | 'both' (default 'both' writes both legacy and new cols)
+    sys_r_mode: str = "both"
+    # severity power p (shortfall^p)
+    sys_reliability_p: int = 2
+    # numerical stability epsilon for denominator
+    sys_reliability_eps: float = 1e-6
+    # optional override lambdas for severity formula; if None, fall back to lambda1/lambda2
+    sys_lambda1: Optional[float] = None
+    sys_lambda2: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)

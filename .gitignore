@@ -11,3 +11,4 @@ outputs/
 .DS_Store
 *.pdf
 output.md
+test.py

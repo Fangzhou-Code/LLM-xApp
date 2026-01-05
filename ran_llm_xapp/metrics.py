@@ -238,6 +238,83 @@ def reliability_from_outage_series(outage_theta_series: Sequence[float]) -> List
     return [outage_theta_to_reliability(x) for x in outage_theta_series]
 
 
+def compute_severity_weighted_reliability_at_t(
+    s1: float,
+    s2: float,
+    theta1: float,
+    theta2: float,
+    *,
+    lambda1: float,
+    lambda2: float,
+    p: int = 2,
+    eps: float = 1e-6,
+) -> float:
+    """Compute severity-weighted system reliability at a single time t.
+
+    Formula:
+      sys_r = 1 - (lambda1 * s1^p * theta1 + lambda2 * s2^p * theta2) / (lambda1 * s1^p + lambda2 * s2^p + eps)
+
+    Notes:
+    - s1/s2 are shortfall magnitudes (>=0). theta1/theta2 are outage fractions in [0,1].
+    - If inputs are not finite, returns NaN.
+    - p must be positive integer.
+    """
+
+    if p <= 0:
+        raise ValueError("p must be positive")
+    # validate finiteness
+    for x in (s1, s2, theta1, theta2, lambda1, lambda2):
+        if not _is_finite(float(x)):
+            return float("nan")
+
+    s1p = float(s1) ** float(p)
+    s2p = float(s2) ** float(p)
+    num = float(lambda1) * s1p * float(theta1) + float(lambda2) * s2p * float(theta2)
+    den = float(lambda1) * s1p + float(lambda2) * s2p + float(eps)
+    # safety clamp
+    frac = num / den if den != 0.0 else float("nan")
+    # reliability = 1 - outage-like fraction
+    return 1.0 - float(frac)
+
+
+def system_reliability_severity(
+    cfg: ExperimentConfig,
+    *,
+    outage_theta1: Sequence[float],
+    outage_theta2: Sequence[float],
+    shortfall1: Sequence[float],
+    shortfall2: Sequence[float],
+) -> List[float]:
+    """Compute severity-weighted system reliability time-series using cfg parameters.
+
+    Returns a list of floats (same length as inputs). Uses cfg.sys_lambda1/sys_lambda2
+    if provided, otherwise falls back to cfg.lambda1/cfg.lambda2.
+    """
+
+    n = min(len(outage_theta1), len(outage_theta2), len(shortfall1), len(shortfall2))
+    lam1 = float(cfg.sys_lambda1) if cfg.sys_lambda1 is not None else float(cfg.lambda1)
+    lam2 = float(cfg.sys_lambda2) if cfg.sys_lambda2 is not None else float(cfg.lambda2)
+    p = int(cfg.sys_reliability_p)
+    eps = float(cfg.sys_reliability_eps)
+
+    out: List[float] = []
+    for i in range(n):
+        t1 = outage_theta1[i]
+        t2 = outage_theta2[i]
+        s1 = shortfall1[i]
+        s2 = shortfall2[i]
+        try:
+            val = compute_severity_weighted_reliability_at_t(s1, s2, t1, t2, lambda1=lam1, lambda2=lam2, p=p, eps=eps)
+        except Exception:
+            val = float("nan")
+        out.append(float(val))
+    # If inputs had extra tail, fill with NaN for consistency to original lengths
+    max_len = max(len(outage_theta1), len(outage_theta2), len(shortfall1), len(shortfall2))
+    if len(out) < max_len:
+        out.extend([float("nan")] * (max_len - len(out)))
+    return out
+
+
 def system_average(u1: float, u2: float, *, slice2_active: bool) -> float:
     """System metric: simple average over existing slices (unweighted)."""
 
@@ -452,6 +529,7 @@ class TimeAverages:
     avg_reliability1: float
     avg_reliability2: float
     avg_system_reliability: float
+    avg_system_reliability_severity: float
 
 
 def _mean_ignore_nan(xs: Iterable[float]) -> float:
@@ -468,6 +546,7 @@ def compute_time_averages(
     outage_theta2: Sequence[float],
     sys_u: Sequence[float],
     system_outage_theta: Sequence[float],
+    system_reliability_severity: Sequence[float] | None = None,
     start_t: int,
 ) -> TimeAverages:
     """Compute time-averaged metrics over t ∈ [start_t, T_end].
@@ -491,4 +570,5 @@ def compute_time_averages(
         avg_reliability1=_mean_ignore_nan(reliability1[start_idx:]),
         avg_reliability2=_mean_ignore_nan(reliability2[start_idx:]),
         avg_system_reliability=_mean_ignore_nan(system_reliability[start_idx:]),
+        avg_system_reliability_severity=_mean_ignore_nan(system_reliability_severity[start_idx:]) if system_reliability_severity is not None else float("nan"),
     )

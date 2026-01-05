@@ -22,6 +22,7 @@ from ran_llm_xapp.metrics import (
     system_average,
     system_utility_weight,
     system_utility_weighted,
+    system_reliability_severity,
 )
 from ran_llm_xapp.plotting import plot_fig4_grid, plot_fig4_single, plot_fig5_bars, plot_fig5_sys_curve
 from ran_llm_xapp.policies import (
@@ -382,6 +383,29 @@ def run_single_method(
             waste_series[-1] = float(soft.waste)
             penalty_series[-1] = float(soft.penalty)
             V_k_soft_series[-1] = float(soft.V_k_soft)
+            # --- Slot-level 回填（slot-level backfill） ---
+            try:
+                start = max(0, int(slot_start_t))
+            except Exception:
+                start = 0
+            end = int(t)
+
+            def _fill(series, value, s, e):
+                if s > e or not series:
+                    return
+                last = min(e, len(series) - 1)
+                if last < s:
+                    return
+                v = float(value)
+                series[s : last + 1] = [v] * (last - s + 1)
+
+            _fill(shortfall1_series, soft.shortfall1, start, end)
+            _fill(shortfall2_series, soft.shortfall2, start, end)
+            _fill(prb2_min_est_series, soft.prb2_min_est, start, end)
+            _fill(waste_series, soft.waste, start, end)
+            _fill(penalty_series, soft.penalty, start, end)
+            _fill(V_k_soft_series, soft.V_k_soft, start, end)
+            # --- End 回填 ---
             policy.record_outcome(
                 SlotOutcome(
                     k=slot_k,
@@ -421,6 +445,14 @@ def run_single_method(
     reliability1_series = reliability_from_outage_series(outage_theta1_series)
     reliability2_series = reliability_from_outage_series(outage_theta2_series)
     system_reliability_series = reliability_from_outage_series(system_outage_theta_series)
+    # severity-weighted system reliability (uses shortfall magnitudes and outage fractions)
+    system_reliability_severity_series = system_reliability_severity(
+        cfg,
+        outage_theta1=outage_theta1_series,
+        outage_theta2=outage_theta2_series,
+        shortfall1=shortfall1_series,
+        shortfall2=shortfall2_series,
+    )
 
     return {
         "t": [float(t) for t in times],
@@ -448,6 +480,7 @@ def run_single_method(
         "reliability1": reliability1_series,
         "reliability2": reliability2_series,
         "system_reliability": system_reliability_series,
+        "system_reliability_severity": system_reliability_severity_series,
         "prb2_min_est": prb2_min_est_series,
         "waste": waste_series,
         "penalty": penalty_series,
@@ -596,6 +629,7 @@ def main() -> None:
                         "reliability1": float(res["reliability1"][i]),
                         "reliability2": float(res["reliability2"][i]),
                         "system_reliability": float(res["system_reliability"][i]),
+                        "system_reliability_severity": float(res.get("system_reliability_severity", [float("nan")])[i]),
                     }
                 )
             write_csv(
@@ -629,6 +663,7 @@ def main() -> None:
                     "reliability1",
                     "reliability2",
                     "system_reliability",
+                    "system_reliability_severity",
                 ],
                 rows=rows,
             )
@@ -641,6 +676,7 @@ def main() -> None:
                 outage_theta2=res["outage_theta2"],
                 sys_u=res["sys_u"],
                 system_outage_theta=res["system_outage_theta"],
+                system_reliability_severity=res.get("system_reliability_severity", None),
                 start_t=cfg.baseline_start_time,
             )
             averages_by_method[method_key] = {
@@ -653,6 +689,7 @@ def main() -> None:
                 "UE1_reliability": float(avgs.avg_reliability1),
                 "UE2_reliability": float(avgs.avg_reliability2),
                 "System_reliability": float(avgs.avg_system_reliability),
+                "System_reliability_severity": float(avgs.avg_system_reliability_severity),
             }
 
     # Plotting

@@ -131,7 +131,6 @@ def plot_fig4_grid(
         for t0 in _demand_change_times(cfg):
             ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
         _apply_fig4_yaxis(ax, cfg=cfg, tick_step=5)
-        ax.set_title(f"{_panel_label(i)} {title_name}")
         ax.grid(True, alpha=0.3)
         if (i % ncols) == 0:
             ax.set_ylabel("Measured data rate (Mbps)")
@@ -142,13 +141,8 @@ def plot_fig4_grid(
     for j in range(n_panels, len(flat_axes)):
         flat_axes[j].axis("off")
 
-    handles, labels = flat_axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2, frameon=False)
-    fig.suptitle(
-        "Fig.4-style Measured Data Rate (UE1 vs UE2)\n"
-        "-- slice init @100s, : allocation starts @200s, -. demand change"
-    )
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    flat_axes[0].legend(loc="upper right", frameon=False)
+    fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
 
@@ -180,11 +174,12 @@ def plot_fig4_single(
     for t0 in _demand_change_times(cfg):
         ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0, label="demand change")
     _apply_fig4_yaxis(ax, cfg=cfg, tick_step=5)
-    ax.set_title(display_name or method)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Measured data rate (Mbps)")
     ax.grid(True, alpha=0.3)
-    ax.legend()
+    ax.legend(loc="upper right", frameon=False)
+    # display_name exists for API compatibility but we intentionally omit titles.
+    del display_name
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
@@ -249,11 +244,12 @@ def plot_fig5_sys_curve(
     for t0 in _demand_change_times(cfg):
         if t0 >= start_t:
             ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
-    ax.set_title(title)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel(ylabel)
     ax.grid(True, alpha=0.3)
-    ax.legend(ncol=2)
+    ax.legend(ncol=2, loc="upper right", frameon=False)
+    # Title text is omitted to keep the plot clean.
+    del title
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
@@ -296,15 +292,16 @@ def plot_fig5_bars(
 
     ax.set_xticks(x)
     ax.set_xticklabels(groups, fontsize=11)
-    ax.set_title(title)
     ax.set_ylabel(ylabel)
     ax.set_axisbelow(True)
     ax.grid(True, axis="y", alpha=0.25)
 
-    # Put legend above to keep bars uncluttered.
+    # Legend sits inside the plot to keep bars uncluttered.
     ncol = min(4, n_methods)
-    ax.legend(loc="upper center", ncol=ncol, bbox_to_anchor=(0.5, 1.22), frameon=False)
+    ax.legend(loc="upper right", ncol=ncol, frameon=False)
     ax.margins(x=0.08)
+    # Titles are suppressed per request.
+    del title
 
     fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(out_path, dpi=150)
