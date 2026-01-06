@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
 
 from .config import ExperimentConfig
@@ -64,6 +65,12 @@ def _demand_change_times(cfg: ExperimentConfig) -> List[int]:
             times.append(t0)
     times.sort()
     return times
+
+
+def _save_figure(fig, out_path: str | Path, *, dpi: int = 150) -> None:
+    path = Path(out_path)
+    fig.savefig(path, dpi=dpi)
+    fig.savefig(path.with_suffix(".pdf"), dpi=dpi)
 
 
 def plot_fig4_grid(
@@ -141,9 +148,17 @@ def plot_fig4_grid(
     for j in range(n_panels, len(flat_axes)):
         flat_axes[j].axis("off")
 
-    flat_axes[0].legend(loc="upper right", frameon=False)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    handles, labels = flat_axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper left",
+        bbox_to_anchor=(0.02, 0.98),
+        ncol=2,
+        frameon=False,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    _save_figure(fig, out_path)
     plt.close(fig)
 
 
@@ -177,11 +192,11 @@ def plot_fig4_single(
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Measured data rate (Mbps)")
     ax.grid(True, alpha=0.3)
-    ax.legend(loc="upper right", frameon=False)
+    ax.legend(loc="upper left", bbox_to_anchor=(0.02, 0.98), ncol=2, frameon=False)
     # display_name exists for API compatibility but we intentionally omit titles.
     del display_name
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    _save_figure(fig, out_path)
     plt.close(fig)
 
 
@@ -195,6 +210,9 @@ def plot_fig5_sys_curve(
     title: str,
     ylabel: str,
     display_names: Mapping[str, str] | None = None,
+    legend_loc: str = "upper left",
+    legend_bbox_to_anchor: tuple[float, float] | None = (0.02, 0.98),
+    legend_ncol: int = 2,
 ) -> None:
     """Plot Fig.5a/5b style smoothed system curve."""
 
@@ -247,11 +265,14 @@ def plot_fig5_sys_curve(
     ax.set_xlabel("Time (s)")
     ax.set_ylabel(ylabel)
     ax.grid(True, alpha=0.3)
-    ax.legend(ncol=2, loc="upper right", frameon=False)
+    legend_kwargs = {"loc": legend_loc, "ncol": legend_ncol, "frameon": False}
+    if legend_bbox_to_anchor is not None:
+        legend_kwargs["bbox_to_anchor"] = legend_bbox_to_anchor
+    ax.legend(**legend_kwargs)
     # Title text is omitted to keep the plot clean.
     del title
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    _save_figure(fig, out_path)
     plt.close(fig)
 
 
@@ -297,12 +318,16 @@ def plot_fig5_bars(
     ax.grid(True, axis="y", alpha=0.25)
 
     # Legend sits inside the plot to keep bars uncluttered.
-    ncol = min(4, n_methods)
-    ax.legend(loc="upper right", ncol=ncol, frameon=False)
+    ax.legend(
+        loc="upper left",
+        bbox_to_anchor=(0.02, 0.98),
+        ncol=2,
+        frameon=False,
+    )
     ax.margins(x=0.08)
     # Titles are suppressed per request.
     del title
 
     fig.tight_layout(rect=[0, 0, 1, 0.92])
-    fig.savefig(out_path, dpi=150)
+    _save_figure(fig, out_path)
     plt.close(fig)

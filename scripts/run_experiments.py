@@ -731,6 +731,8 @@ def main() -> None:
         title="Fig.5a Smoothed System Utility",
         ylabel="System Utility (moving avg)",
         display_names=display_name_by_key,
+        legend_loc="upper right",
+        legend_bbox_to_anchor=None,
     )
     plot_fig5_sys_curve(
         cfg=cfg,
