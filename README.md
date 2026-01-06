@@ -1,10 +1,11 @@
-# ran-llm-xApp (Pure Python, Synthetic Repro)
+# ran-llm-xApp (Pure Python, Synthetic Research Prototype)
 
-本项目用**纯本地 Python 合成仿真**复现论文《LLM-xApp: A Large Language Model Empowered Radio Resource Management xApp for 5G O-RAN》的核心流程、指标定义与对比曲线（图4/图5同类信息量与相近趋势形态）。
+本项目是基于论文《LLM-xApp: A Large Language Model Empowered Radio Resource Management xApp for 5G O-RAN》的思想与指标定义，构建的**纯本地 Python 合成仿真研究原型**，用于在可控环境下验证/扩展论文方法并开展创新实验；**不是对原论文 testbed 的严格复现**，也不追求数值逐点对齐（输出曲线主要呈现同类信息量与相近趋势形态）。
 
 关键点：
 - **不依赖** OAIC testbed / srsRAN / O-RAN 组件
-- 严格实现论文关键定义：Utility(式(1)(2))、Reliability(滑窗 Tw)、动作到 PRB 映射(式(7) + 超预算修正)、评价函数(式(8), 默认 `g(x)=-x^2`)
+- 实现并扩展论文关键定义：Utility(式(1)(2))、Reliability(滑窗 Tw)、动作到 PRB 映射(式(7) + 超预算修正)、评价函数(式(8), 默认 `g(x)=-x^2`)
+- 在论文方法基础上加入工程化/算法改动（如 RealScore-driven TNAS、多模型对比与更稳定的度量/惩罚项），便于研究与创新验证
 - 实现 5 个方法：`equal` / `random` / `proportional` / `tnas`（Top-N Action Sampling）/ `cem`（Budgeted CEM）
 
 ## 安装
