@@ -3,17 +3,84 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from ..config import ExperimentConfig
 from ..io_utils import PromptResponseCache
 from ..llm_clients.base import LLMClient
 from ..metrics import action_to_prbs, effective_cap_mbps, score_allocation_proxy
 from ..prompts import PromptObservation, build_tnas_prompt, build_tnas_repair_prompt
-from .base import Observation, Policy, clamp_action
+from .base import Observation, Policy, SlotOutcome, clamp_action
 
 logger = logging.getLogger(__name__)
+
+
+class RealScoreCritic:
+    """Simplified critic that learns from real V_k_soft samples."""
+
+    def __init__(self, cfg: ExperimentConfig) -> None:
+        self.cfg = cfg
+        self._lr = float(cfg.tnas_real_score_lr)
+        self.explore_prob = float(cfg.tnas_real_score_explore)
+        self.weights = [0.0] * self._feature_dim()
+
+    def _feature_dim(self) -> int:
+        return 14
+
+    def build_features(
+        self,
+        obs: Observation,
+        action: Tuple[int, int],
+        prbs: Tuple[int, int],
+    ) -> Sequence[float]:
+        prb1, prb2 = prbs
+        total_prb = max(float(self.cfg.R_total), 1.0)
+        denom = float(action[0] + action[1]) if (action[0] + action[1]) > 0 else 1.0
+        ratio_a1 = float(action[0]) / denom
+
+        mean1 = float(sum(obs.recent_hat_sigma1) / len(obs.recent_hat_sigma1)) if obs.recent_hat_sigma1 else 0.0
+        mean2 = float(sum(obs.recent_hat_sigma2) / len(obs.recent_hat_sigma2)) if obs.recent_hat_sigma2 else 0.0
+
+        eff_cap1 = effective_cap_mbps(float(obs.sigma1), self.cfg.cap1_hard_mbps)
+        eff_cap2 = effective_cap_mbps(float(obs.sigma2), self.cfg.cap2_hard_mbps)
+        shortfall1 = max(0.0, eff_cap1 - mean1)
+        shortfall2 = max(0.0, eff_cap2 - mean2)
+        base_cap1 = max(float(eff_cap1), 1e-6)
+        base_cap2 = max(float(eff_cap2), 1e-6)
+
+        features = [
+            1.0,
+            float(prb1) / total_prb,
+            float(prb2) / total_prb,
+            (float(prb1) - float(prb2)) / total_prb,
+            ratio_a1,
+            mean1 / base_cap1,
+            mean2 / base_cap2,
+            shortfall1 / base_cap1,
+            shortfall2 / base_cap2,
+            float(obs.sigma1) / base_cap1,
+            float(obs.sigma2) / base_cap2,
+            1.0 if obs.slice2_active else 0.0,
+            (float(prb1) - float(obs.current_prb1)) / total_prb,
+            (float(prb2) - float(obs.current_prb2)) / total_prb,
+        ]
+        return features
+
+    def predict(self, features: Sequence[float]) -> float:
+        return sum(float(w) * float(f) for w, f in zip(self.weights, features))
+
+    def update(self, features: Sequence[float], reward: float) -> None:
+        if not features:
+            return
+        target = float(reward)
+        pred = self.predict(features)
+        error = target - pred
+        denom = sum(float(f) ** 2 for f in features) + 1e-6
+        factor = self._lr * error / denom
+        for i, value in enumerate(features):
+            self.weights[i] += factor * float(value)
 
 
 def _extract_json_object(text: str) -> Optional[str]:
@@ -84,6 +151,9 @@ class TNASPolicy(Policy):
         self.temperature = float(cfg.Tem_max)
         self._last_cache_path: Optional[Path] = None
         self._debug = os.getenv("RAN_LLM_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+        self._rng = random.Random(self.seed)
+        self._critic: Optional[RealScoreCritic] = RealScoreCritic(cfg) if cfg.tnas_use_real_score else None
+        self._pending_features: Optional[Sequence[float]] = None
 
     def reset(self) -> None:
         self._last_cache_path = None
@@ -209,38 +279,65 @@ class TNASPolicy(Policy):
                 break
         candidates = uniq[:top_n]
 
-        best_score = float("-inf")
-        best_action = candidates[0]
-        best_prbs = (0, 0)
-        best_idx = 0
         scores: List[float] = []
+        prbs_list: List[Tuple[int, int]] = []
+        feature_list: List[Sequence[float]] = []
         for idx, action in enumerate(candidates):
             prb1_c, prb2_c = action_to_prbs(action, self.cfg.R_total)
-            score, _extra = score_allocation_proxy(
-                self.cfg,
-                t=int(obs.t),
-                sigma1=float(obs.sigma1),
-                sigma2=float(obs.sigma2),
-                prb1=int(prb1_c),
-                prb2=int(prb2_c),
-            )
+            prbs_list.append((int(prb1_c), int(prb2_c)))
+            if self._critic:
+                feat = self._critic.build_features(obs, action, (prb1_c, prb2_c))
+                feature_list.append(feat)
+                score = self._critic.predict(feat)
+            else:
+                score, _extra = score_allocation_proxy(
+                    self.cfg,
+                    t=int(obs.t),
+                    sigma1=float(obs.sigma1),
+                    sigma2=float(obs.sigma2),
+                    prb1=int(prb1_c),
+                    prb2=int(prb2_c),
+                )
             scores.append(float(score))
-            if score > best_score:
-                best_score = float(score)
-                best_action = action
-                best_prbs = (int(prb1_c), int(prb2_c))
-                best_idx = int(idx)
+
+        if self._critic:
+            explore = self._rng.random() < self._critic.explore_prob
+            if explore:
+                best_idx = int(self._rng.randrange(len(candidates)))
+            else:
+                best_idx = int(max(range(len(candidates)), key=lambda i: scores[i]))
+            self._pending_features = feature_list[best_idx]
+            best_mode = "real"
+        else:
+            best_idx = int(max(range(len(candidates)), key=lambda i: scores[i]))
+            self._pending_features = None
+            best_mode = "proxy"
+
+        best_score = scores[best_idx]
+        best_action = candidates[best_idx]
+        best_prbs = prbs_list[best_idx]
 
         logger.info(
-            "TNAS t=%s candidates=%s chosen_idx=%s action=%s prbs=%s score=%.2f",
+            "TNAS t=%s candidates=%s chosen_idx=%s action=%s prbs=%s score=%.2f mode=%s",
             int(obs.t),
             len(candidates),
             best_idx,
             best_action,
             best_prbs,
             best_score,
+            best_mode,
         )
         if self._debug:
             logger.info("TNAS scores=%s", [round(s, 2) for s in scores])
 
         return best_action
+
+    def record_outcome(self, outcome: SlotOutcome) -> None:
+        super().record_outcome(outcome)
+        if self._critic and self._pending_features is not None:
+            try:
+                reward = float(outcome.V_k_soft)
+            except Exception:
+                reward = float("nan")
+            self._critic.update(self._pending_features, reward)
+            self._pending_features = None

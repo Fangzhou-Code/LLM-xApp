@@ -28,7 +28,6 @@ from ran_llm_xapp.plotting import plot_fig4_grid, plot_fig4_single, plot_fig5_ba
 from ran_llm_xapp.policies import (
     EqualPolicy,
     Observation,
-    OraclePolicy,
     ProportionalPolicy,
     RandomPolicy,
     SlotOutcome,
@@ -41,8 +40,8 @@ logger = logging.getLogger("run_experiments")
 
 
 METHODS_ALL = ("equal", "random", "proportional")
-# Methods considered valid when explicitly provided (e.g., --methods tnas or oracle).
-METHODS_VALID = tuple(list(METHODS_ALL) + ["tnas", "oracle"])
+# Methods considered valid when explicitly provided (e.g., --methods tnas).
+METHODS_VALID = tuple(list(METHODS_ALL) + ["tnas"])
 
 
 def _parse_methods(raw: Sequence[str]) -> List[str]:
@@ -219,8 +218,6 @@ def _build_policy(
     if method == "random":
         # Policy RNG should not consume the env RNG sequence.
         return RandomPolicy(seed=seed + 12345)
-    if method == "oracle":
-        return OraclePolicy(cfg=cfg)
     if method == "tnas":
         if llm_provider == "openai":
             client = OpenAIClient()
@@ -334,10 +331,7 @@ def run_single_method(
                     recent_hat_sigma2=win2,
                 )
                 current_action = policy.select_action(obs)
-                if method in {"oracle"}:
-                    current_prbs = (int(current_action[0]), int(current_action[1]))
-                else:
-                    current_prbs = action_to_prbs(current_action, cfg.R_total)
+                current_prbs = action_to_prbs(current_action, cfg.R_total)
 
             slot_start_t = t
             slot_k = int(t // cfg.reconfig_interval)
@@ -494,7 +488,7 @@ def main() -> None:
         "--methods",
         nargs="+",
         required=True,
-        help="Methods to run: all | all2 | equal random proportional tnas oracle",
+        help="Methods to run: all | equal random proportional tnas",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=str, required=True)
@@ -520,16 +514,13 @@ def main() -> None:
         logger.info("Loaded .env from: %s", dotenv_loaded)
 
     methods = _parse_methods(args.methods)
-    # Special-case: when the user passed `--methods all` and also provided `--llm-runs`,
-    # run the TNAS variants in addition to the baseline methods so large-model
-    # experiments are executed without changing the meaning of `all` for other uses.
     try:
         methods_raw = [m.lower() for m in args.methods]
     except Exception:
         methods_raw = []
-    if getattr(args, "llm_runs", None) and (len(methods_raw) == 1 and methods_raw[0] == "all") and ("tnas" not in methods):
+    if getattr(args, "llm_runs", None) and "tnas" not in methods:
         methods.append("tnas")
-        logger.info("--llm-runs provided with --methods all: adding 'tnas' to methods to run LLM variants")
+        logger.info("--llm-runs provided: adding 'tnas' so the improved TNAS variants run as well.")
     out_dir = ensure_dir(args.out)
 
     cfg = ExperimentConfig()
@@ -556,11 +547,7 @@ def main() -> None:
     need_tnas = "tnas" in methods
     if need_tnas and not args.llm_runs:
         raise SystemExit("TNAS selected but --llm-runs was not provided. Example: --llm-runs openai:gpt-4o deepseek:deepseek-v3.2")
-    if (not need_tnas) and args.llm_runs:
-        logger.warning("--llm-runs was provided but TNAS is not selected; ignoring it.")
-        llm_runs = []
-    else:
-        llm_runs = _parse_llm_runs(args) if args.llm_runs else []
+    llm_runs = _parse_llm_runs(args) if args.llm_runs else []
 
     results_by_method: Dict[str, Dict[str, List[float]]] = {}
     averages_by_method: Dict[str, Dict[str, float]] = {}
@@ -571,10 +558,7 @@ def main() -> None:
         run_specs: List[Tuple[str, str, str]] = []
         if method != "tnas":
             run_specs.append((method, default_provider, default_model))
-            if method == "oracle":
-                display_name_by_key[method] = "Oracle (Exact-Soft-Opt)"
-            else:
-                display_name_by_key[method] = method
+            display_name_by_key[method] = method
         else:
             for prov, model in llm_runs:
                 key = f"tnas_{prov}_{_sanitize_name(model)}"
@@ -694,7 +678,7 @@ def main() -> None:
 
     # Plotting
     methods_order: List[str] = []
-    baseline_keys = [k for k in ("equal", "random", "proportional", "oracle") if k in results_by_method]
+    baseline_keys = [k for k in ("equal", "random", "proportional") if k in results_by_method]
     tnas_keys = [k for k in tnas_variant_keys if k in results_by_method]
 
     methods_order.extend(baseline_keys)

@@ -5,7 +5,7 @@
 关键点：
 - **不依赖** OAIC testbed / srsRAN / O-RAN 组件
 - 严格实现论文关键定义：Utility(式(1)(2))、Reliability(滑窗 Tw)、动作到 PRB 映射(式(7) + 超预算修正)、评价函数(式(8), 默认 `g(x)=-x^2`)
-- 实现 6 个方法：`equal` / `random` / `proportional` / `tnas`（Top-N Action Sampling）/ `cem`（Budgeted CEM）/ `oracle`（Exact-Soft-Opt）
+- 实现 5 个方法：`equal` / `random` / `proportional` / `tnas`（Top-N Action Sampling）/ `cem`（Budgeted CEM）
 
 ## 安装
 
@@ -19,12 +19,14 @@ python3 -m pip install -e .
 
 ## 运行（CLI）
 
-命令入口：
+命令入口（推荐）：  
 ```bash
-python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/run1 --llm-runs stub:stub
+python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/multi_llm \
+  --llm-runs openai:gpt-4o deepseek:deepseek-v3.2 google:gemini
 ```
+该指令会把 `equal/random/proportional` 与 `tnas` 全部跑一遍，而各个 `--llm-runs` 模型会被当成独立的 `tnas_*` 变体一起对比，便于复现 paper 里的 multi-LLM 结果。
 
-至少 3 个 methods 子集示例：
+其他常见案例：
 ```bash
 # 只跑 tnas（用纯本地 stub）
 python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_only \
@@ -33,12 +35,8 @@ python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_on
 # 跑 equal + proportional
 python3 -m scripts.run_experiments --methods equal proportional --seed 0 --out outputs/eq_prop
 
-# 跑全部（默认推荐：stub，无需 key 也能出图）
+# 跑全部 base + tnas
 python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/all_stub \
-  --llm-runs stub:stub
-
-# 也可用 all2 把 oracle 一起跑上（更慢，但作为上界参考）
-python3 -m scripts.run_experiments --methods all2 --seed 0 --out outputs/all2_stub \
   --llm-runs stub:stub
 ```
 
@@ -50,18 +48,15 @@ python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_de
   --llm-runs deepseek:deepseek-v3.2
 ```
 
-一条指令同时跑多个模型（会把每个模型视为一个独立的 `tnas_*` 变体一起对比）：
-```bash
-python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/multi_llm \
-  --llm-runs openai:gpt-4o deepseek:deepseek-v3.2 stub:stub
-```
-
 说明：
 - `--model` 不填时会按 `--provider` 自动选择默认：OpenAI→`gpt-4o-mini`，DeepSeek→`deepseek-chat`，stub→`stub`。
 - `--llm-runs` 的每项支持两种写法：
   - `provider:model`（显式指定 provider）
   - `model`（使用 `--provider` 作为默认 provider）
-- 若启用 `--llm-runs` 且选择了 `tnas`，则 TNAS 会按列表逐个运行，并输出 `timeseries_tnas_<provider>_<model>.csv`（文件名会自动做安全化）。
+- 当同时提供 `--llm-runs` 且未显式选择 `tnas`（如仅 `--methods all`），脚本会自动把 `tnas` 加回去，这样 `gpt` 和 `deepseek` 变体仍会跑一次改进后的 TNAS。
+- `--methods all` 仅跑 equal/random/proportional；不过如果你同时传 `--llm-runs`，脚本会隐式再加一次 `tnas`（改进版）并为每个 LLM 生成独立 `tnas_*` 结果。
+- 若启用 `--llm-runs`，请确保 `--methods` 中包含 `tnas` 或 `all`（因为我们会自动补上）；TNAS 变体仍会产出 `timeseries_tnas_<provider>_<model>.csv`。（文件名会自动做安全化）
+- 当前的 `tnas` 已切换为 RealScore-driven 版本（即上面提到的“改进后的 TNAS”），不会再使用旧的 proxy score 排序。
 
 LLM 缓存目录（避免重复计费）可通过 `--cache-dir` 指定；同 prompt 命中缓存会直接复用 response。
 

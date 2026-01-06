@@ -84,6 +84,9 @@ class ExperimentConfig:
     llm_timeout_s: int = 60
     llm_parse_retry: int = 1  # retry once with repair prompt
     tnas_top_n: int = 8
+    tnas_use_real_score: bool = True
+    tnas_real_score_lr: float = 0.05
+    tnas_real_score_explore: float = 0.1
 
     # Budgeted CEM baseline (black-box elite sampling)
     cem_iters: int = 1

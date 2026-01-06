@@ -50,8 +50,8 @@ def score_allocation_proxy(
 ) -> Tuple[float, Dict[str, float]]:
     """Myopic proxy score for a given PRB allocation (higher is better).
 
-    This is used by TNAS (local re-ranking) and Oracle (exact enumeration) to ensure
-    both methods use the same evaluation logic.
+    This is used by TNAS (local re-ranking) to ensure the same evaluation logic is
+    applied consistently.
 
     Proxy throughput uses a deterministic ideal model (no noise):
       ideal_sigma_s = min(eff_cap_s, eff_s * prb_s)
