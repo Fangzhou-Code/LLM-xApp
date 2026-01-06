@@ -57,6 +57,7 @@ python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_de
 - `--methods all` 仅跑 equal/random/proportional；不过如果你同时传 `--llm-runs`，脚本会隐式再加一次 `tnas`（改进版）并为每个 LLM 生成独立 `tnas_*` 结果。
 - 若启用 `--llm-runs`，请确保 `--methods` 中包含 `tnas` 或 `all`（因为我们会自动补上）；TNAS 变体仍会产出 `timeseries_tnas_<provider>_<model>.csv`。（文件名会自动做安全化）
 - 当前的 `tnas` 已切换为 RealScore-driven 版本（即上面提到的“改进后的 TNAS”），不会再使用旧的 proxy score 排序。
+- 为减少干扰，critic 只在信号（特征范数）足够强时输出、否则会回退到近似比例分配；这可避免某些 slot 中 abrupt 的 UE1/UE2 变化。
 
 LLM 缓存目录（避免重复计费）可通过 `--cache-dir` 指定；同 prompt 命中缓存会直接复用 response。
 

@@ -27,7 +27,7 @@ class RealScoreCritic:
         self.weights = [0.0] * self._feature_dim()
 
     def _feature_dim(self) -> int:
-        return 14
+        return 16
 
     def build_features(
         self,
@@ -65,11 +65,16 @@ class RealScoreCritic:
             1.0 if obs.slice2_active else 0.0,
             (float(prb1) - float(obs.current_prb1)) / total_prb,
             (float(prb2) - float(obs.current_prb2)) / total_prb,
+            abs(float(prb1) - float(obs.current_prb1)) / total_prb,
+            abs(float(prb2) - float(obs.current_prb2)) / total_prb,
         ]
         return features
 
     def predict(self, features: Sequence[float]) -> float:
         return sum(float(w) * float(f) for w, f in zip(self.weights, features))
+
+    def confidence(self, features: Sequence[float]) -> float:
+        return max(1e-6, sum(float(f) ** 2 for f in features))
 
     def update(self, features: Sequence[float], reward: float) -> None:
         if not features:
@@ -300,22 +305,43 @@ class TNASPolicy(Policy):
                 )
             scores.append(float(score))
 
+        low_confidence = False
+        best_score = float("-inf")
+        chosen_idx = 0
+        best_idx = 0
         if self._critic:
             explore = self._rng.random() < self._critic.explore_prob
             if explore:
-                best_idx = int(self._rng.randrange(len(candidates)))
+                chosen_idx = int(self._rng.randrange(len(candidates)))
             else:
-                best_idx = int(max(range(len(candidates)), key=lambda i: scores[i]))
-            self._pending_features = feature_list[best_idx]
-            best_mode = "real"
+                chosen_idx = int(max(range(len(candidates)), key=lambda i: scores[i]))
+            best_idx = chosen_idx
+            best_score = scores[chosen_idx]
+            best_feat = feature_list[chosen_idx]
+            best_action = candidates[chosen_idx]
+            best_prbs = prbs_list[chosen_idx]
+            confidence = self._critic.confidence(best_feat)
+            if confidence < float(self.cfg.tnas_confidence_threshold):
+                low_confidence = True
+                fallback_action = clamp_action(int(round(obs.sigma1)), int(round(obs.sigma2)))
+                fallback_prbs = action_to_prbs(fallback_action, self.cfg.R_total)
+                fallback_feat = self._critic.build_features(obs, fallback_action, fallback_prbs)
+                best_score = self._critic.predict(fallback_feat)
+                best_action = fallback_action
+                best_prbs = fallback_prbs
+                self._pending_features = fallback_feat
+                best_mode = "fallback"
+            else:
+                self._pending_features = best_feat
+                best_mode = "real"
         else:
-            best_idx = int(max(range(len(candidates)), key=lambda i: scores[i]))
+            chosen_idx = int(max(range(len(candidates)), key=lambda i: scores[i]))
+            best_idx = chosen_idx
+            best_score = scores[chosen_idx]
+            best_action = candidates[chosen_idx]
+            best_prbs = prbs_list[chosen_idx]
             self._pending_features = None
             best_mode = "proxy"
-
-        best_score = scores[best_idx]
-        best_action = candidates[best_idx]
-        best_prbs = prbs_list[best_idx]
 
         logger.info(
             "TNAS t=%s candidates=%s chosen_idx=%s action=%s prbs=%s score=%.2f mode=%s",

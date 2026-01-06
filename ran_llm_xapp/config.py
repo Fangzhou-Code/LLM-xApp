@@ -87,6 +87,7 @@ class ExperimentConfig:
     tnas_use_real_score: bool = True
     tnas_real_score_lr: float = 0.05
     tnas_real_score_explore: float = 0.1
+    tnas_confidence_threshold: float = 0.7
 
     # Budgeted CEM baseline (black-box elite sampling)
     cem_iters: int = 1
