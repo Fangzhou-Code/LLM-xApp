@@ -1,4 +1,4 @@
-# ran-llm-xApp (Pure Python, Synthetic Research Prototype)
+# RAN-LLM-xApp
 
 本项目是基于论文《LLM-xApp: A Large Language Model Empowered Radio Resource Management xApp for 5G O-RAN》的思想与指标定义，构建的**纯本地 Python 合成仿真研究原型**，用于在可控环境下验证/扩展论文方法并开展创新实验；**不是对原论文 testbed 的严格复现**，也不追求数值逐点对齐（输出曲线主要呈现同类信息量与相近趋势形态）。
 
