@@ -89,13 +89,6 @@ class ExperimentConfig:
     tnas_real_score_explore: float = 0.1
     tnas_confidence_threshold: float = 0.7
 
-    # Budgeted CEM baseline (black-box elite sampling)
-    cem_iters: int = 1
-    cem_samples: int = 8
-    cem_elite_k: int = 2
-    cem_step: int = 8
-    cem_alpha: float = 0.5
-
     # Synthetic environment model (tunable)
     eff1_mbps_per_prb: float = 0.305  # ~64 PRB -> 19.5 Mbps; ~96 PRB -> 29.3 Mbps; 128 PRB -> 39.0 Mbps
     eff2_mbps_per_prb: float = 0.5

@@ -488,7 +488,7 @@ def main() -> None:
         "--methods",
         nargs="+",
         required=True,
-        help="Methods to run: all | equal random proportional tnas",
+        help="Methods to run: all | all2 | equal random proportional tnas",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=str, required=True)
