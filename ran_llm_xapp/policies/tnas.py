@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import random
+import math
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
@@ -15,6 +16,16 @@ from ..prompts import PromptObservation, build_tnas_prompt, build_tnas_repair_pr
 from .base import Observation, Policy, SlotOutcome, clamp_action
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_prb_need(*, sigma_mbps: float, cap_hard_mbps: Optional[float], eff_mbps_per_prb: float) -> int:
+    eff_cap = effective_cap_mbps(float(sigma_mbps), cap_hard_mbps)
+    eff = float(eff_mbps_per_prb)
+    if eff_cap <= 0:
+        return 0
+    if eff <= 0:
+        return 10**9
+    return int(math.ceil(float(eff_cap) / eff))
 
 
 class RealScoreCritic:
@@ -283,6 +294,40 @@ class TNASPolicy(Policy):
             if len(uniq) >= top_n:
                 break
         candidates = uniq[:top_n]
+
+        # Feasibility-aware UE2 guardrail:
+        # If current demands are feasible within the PRB budget, avoid starving UE2.
+        # This is important in the feasible stage (e.g., t∈[200,400)) where we expect:
+        # - UE2 stays near its target
+        # - extra PRBs (if any) go to UE1 without harming UE2
+        need1 = _estimate_prb_need(
+            sigma_mbps=float(obs.sigma1),
+            cap_hard_mbps=self.cfg.cap1_hard_mbps,
+            eff_mbps_per_prb=float(self.cfg.eff1_mbps_per_prb),
+        )
+        need2 = _estimate_prb_need(
+            sigma_mbps=float(obs.sigma2),
+            cap_hard_mbps=self.cfg.cap2_hard_mbps,
+            eff_mbps_per_prb=float(self.cfg.eff2_mbps_per_prb),
+        )
+        feasible = (need1 + need2) <= int(self.cfg.R_total)
+        prb2_min_guard = int(max(1, need2)) if feasible else 1
+        if prb2_min_guard > 1:
+            filtered: List[Tuple[int, int]] = []
+            for a in candidates:
+                try:
+                    _p1, p2 = action_to_prbs(a, self.cfg.R_total)
+                except Exception:
+                    continue
+                if int(p2) >= prb2_min_guard:
+                    filtered.append(a)
+            if not filtered:
+                # Construct an action that maps to approximately (R_total-need2, need2) PRBs.
+                # When a1+a2==R_total, action_to_prbs returns r2==a2 exactly.
+                a2 = int(min(max(1, prb2_min_guard), 128))
+                a1 = int(min(max(1, int(self.cfg.R_total) - a2), 128))
+                filtered = [clamp_action(a1, a2), clamp_action(int(round(obs.sigma1)), int(round(obs.sigma2)))]
+            candidates = filtered
 
         scores: List[float] = []
         prbs_list: List[Tuple[int, int]] = []

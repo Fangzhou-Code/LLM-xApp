@@ -28,8 +28,8 @@ class ExperimentConfig:
     baseline_start_time: int = 200
 
     # PRB budget
-    R_total: int = 128
-    R_eff_pre: int = 128  # kept for backward-compat; effective budget is `R_total` by default.
+    R_total: int = 160
+    R_eff_pre: int = 160  # kept for backward-compat; effective budget is `R_total` by default.
 
     # Pre-slicing stage fixed PRB split (0~slice_init_time)
     pre_slice_prb1: int = 96
@@ -43,10 +43,10 @@ class ExperimentConfig:
     #
     # Default schedule requested by the experiment spec:
     # - t < 200         : sigma1=40, sigma2=10
-    # - 200 <= t < 400  : sigma1=30, sigma2=10   (feasible)
+    # - 200 <= t < 400  : sigma1=35, sigma2=10   (feasible)
     # - t >= 400        : sigma1=45, sigma2=10   (infeasible)
     demand_schedule: List[Tuple[int, float, float]] = dataclasses.field(
-        default_factory=lambda: [(0, 40.0, 10.0), (200, 30.0, 10.0), (400, 45.0, 10.0)]
+        default_factory=lambda: [(0, 40.0, 10.0), (200, 35.0, 10.0), (400, 45.0, 10.0)]
     )
 
     # Utility params (Table I)
@@ -54,7 +54,7 @@ class ExperimentConfig:
     b: float = 6.5
     c: float = 5.0
     u_th1: float = 0.7
-    u_th2: float = 0.3
+    u_th2: float = 0.6
 
     # Reliability window (seconds/samples)
     Tw: int = 20

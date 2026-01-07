@@ -13,6 +13,7 @@ from ran_llm_xapp.io_utils import PromptResponseCache, ensure_dir, load_dotenv, 
 from ran_llm_xapp.llm_clients import DeepSeekClient, OpenAIClient, StubLLMClient, GoogleClient
 from ran_llm_xapp.metrics import (
     action_to_prbs,
+    compute_severity_weighted_reliability_at_t,
     compute_time_averages,
     compute_utilities,
     effective_cap_mbps,
@@ -447,6 +448,37 @@ def run_single_method(
         shortfall1=shortfall1_series,
         shortfall2=shortfall2_series,
     )
+    # severity-weighted per-slice reliability (apply the same severity formula with the other slice set to 0).
+    lam1 = float(cfg.sys_lambda1) if cfg.sys_lambda1 is not None else float(cfg.lambda1)
+    lam2 = float(cfg.sys_lambda2) if cfg.sys_lambda2 is not None else float(cfg.lambda2)
+    sev_p = int(cfg.sys_reliability_p)
+    sev_eps = float(cfg.sys_reliability_eps)
+    reliability1_severity_series = [
+        compute_severity_weighted_reliability_at_t(
+            float(shortfall1_series[i]),
+            0.0,
+            float(outage_theta1_series[i]),
+            0.0,
+            lambda1=lam1,
+            lambda2=0.0,
+            p=sev_p,
+            eps=sev_eps,
+        )
+        for i in range(len(times))
+    ]
+    reliability2_severity_series = [
+        compute_severity_weighted_reliability_at_t(
+            0.0,
+            float(shortfall2_series[i]),
+            0.0,
+            float(outage_theta2_series[i]),
+            lambda1=0.0,
+            lambda2=lam2,
+            p=sev_p,
+            eps=sev_eps,
+        )
+        for i in range(len(times))
+    ]
 
     return {
         "t": [float(t) for t in times],
@@ -474,6 +506,8 @@ def run_single_method(
         "reliability1": reliability1_series,
         "reliability2": reliability2_series,
         "system_reliability": system_reliability_series,
+        "reliability1_severity": reliability1_severity_series,
+        "reliability2_severity": reliability2_severity_series,
         "system_reliability_severity": system_reliability_severity_series,
         "prb2_min_est": prb2_min_est_series,
         "waste": waste_series,
@@ -613,6 +647,8 @@ def main() -> None:
                         "reliability1": float(res["reliability1"][i]),
                         "reliability2": float(res["reliability2"][i]),
                         "system_reliability": float(res["system_reliability"][i]),
+                        "reliability1_severity": float(res.get("reliability1_severity", [float("nan")])[i]),
+                        "reliability2_severity": float(res.get("reliability2_severity", [float("nan")])[i]),
                         "system_reliability_severity": float(res.get("system_reliability_severity", [float("nan")])[i]),
                     }
                 )
@@ -647,6 +683,8 @@ def main() -> None:
                     "reliability1",
                     "reliability2",
                     "system_reliability",
+                    "reliability1_severity",
+                    "reliability2_severity",
                     "system_reliability_severity",
                 ],
                 rows=rows,
@@ -675,6 +713,14 @@ def main() -> None:
                 "System_reliability": float(avgs.avg_system_reliability),
                 "System_reliability_severity": float(avgs.avg_system_reliability_severity),
             }
+            # Additional severity-weighted per-slice averages (not part of TimeAverages yet).
+            start_idx = max(0, int(cfg.baseline_start_time // cfg.dt))
+            r1_sev = res.get("reliability1_severity", None)
+            r2_sev = res.get("reliability2_severity", None)
+            if isinstance(r1_sev, list):
+                averages_by_method[method_key]["UE1_reliability_severity"] = float(_mean(r1_sev[start_idx:]))
+            if isinstance(r2_sev, list):
+                averages_by_method[method_key]["UE2_reliability_severity"] = float(_mean(r2_sev[start_idx:]))
 
     # Plotting
     methods_order: List[str] = []
@@ -713,7 +759,7 @@ def main() -> None:
         series_key="sys_u",
         out_path=str(out_dir / "fig5a_sys_utility.png"),
         title="Fig.5a Smoothed System Utility",
-        ylabel="System Utility (moving avg)",
+        ylabel="System Utility",
         display_names=display_name_by_key,
         legend_loc="upper right",
         legend_bbox_to_anchor=None,
@@ -725,7 +771,17 @@ def main() -> None:
         series_key="system_reliability",
         out_path=str(out_dir / "fig5b_sys_reliability.png"),
         title="Fig.5b Smoothed System Reliability (reliability = 1 - outage θ)",
-        ylabel="System Reliability (moving avg; higher is better)",
+        ylabel="System Reliability",
+        display_names=display_name_by_key,
+    )
+    plot_fig5_sys_curve(
+        cfg=cfg,
+        results_by_method=results_by_method,
+        methods_order=methods_order,
+        series_key="system_reliability_severity",
+        out_path=str(out_dir / "fig5b_sys_reliability_severity.png"),
+        title="Fig.5b Smoothed Severity-weighted System Reliability",
+        ylabel="Severity-weighted System Reliability",
         display_names=display_name_by_key,
     )
     # Optional debug view (outage fraction; lower is better).
@@ -736,7 +792,7 @@ def main() -> None:
         series_key="system_outage_theta",
         out_path=str(out_dir / "fig5b_outage_theta.png"),
         title="Fig.5b (debug) Smoothed System Outage θ (outage fraction)",
-        ylabel="System Outage θ (moving avg; lower is better)",
+        ylabel="System Outage θ",
         display_names=display_name_by_key,
     )
 
@@ -745,7 +801,7 @@ def main() -> None:
         methods_order=methods_order,
         keys=["UE1", "UE2", "System"],
         title=f"Fig.5c Time-averaged Utility (t≥{cfg.baseline_start_time}s)",
-        ylabel="Utility (avg)",
+        ylabel="Utility",
         out_path=str(out_dir / "fig5c_avg_utility.png"),
         display_names=display_name_by_key,
     )
@@ -761,8 +817,24 @@ def main() -> None:
         methods_order=methods_order,
         keys=["UE1", "UE2", "System"],
         title=f"Fig.5d Time-averaged Reliability (t≥{cfg.baseline_start_time}s; higher is better)",
-        ylabel="Reliability (avg; higher is better)",
+        ylabel="Reliability",
         out_path=str(out_dir / "fig5d_avg_reliability.png"),
+        display_names=display_name_by_key,
+    )
+    plot_fig5_bars(
+        averages_by_method={
+            m: {
+                "UE1": float(averages_by_method[m].get("UE1_reliability_severity", float("nan"))),
+                "UE2": float(averages_by_method[m].get("UE2_reliability_severity", float("nan"))),
+                "System": float(averages_by_method[m].get("System_reliability_severity", float("nan"))),
+            }
+            for m in methods_order
+        },
+        methods_order=methods_order,
+        keys=["UE1", "UE2", "System"],
+        title=f"Fig.5d Time-averaged Severity-weighted Reliability (t≥{cfg.baseline_start_time}s; higher is better)",
+        ylabel="Severity-weighted Reliability",
+        out_path=str(out_dir / "fig5d_avg_reliability_severity.png"),
         display_names=display_name_by_key,
     )
     # Optional debug bars (outage fraction; lower is better).
@@ -778,7 +850,7 @@ def main() -> None:
         methods_order=methods_order,
         keys=["UE1", "UE2", "System"],
         title=f"Fig.5d (debug) Time-averaged Outage θ (t≥{cfg.baseline_start_time}s; lower is better)",
-        ylabel="Outage θ (avg; lower is better)",
+        ylabel="Outage θ",
         out_path=str(out_dir / "fig5d_outage_theta.png"),
         display_names=display_name_by_key,
     )

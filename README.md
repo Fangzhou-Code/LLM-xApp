@@ -129,9 +129,11 @@ export GOOGLE_API_KEY="..."
 - 图5：
   - `fig5a_sys_utility.png`
   - `fig5b_sys_reliability.png`
+  - `fig5b_sys_reliability_severity.png`（severity-weighted：基于 shortfall 幅度与 outage θ 的加权可靠性）
   - `fig5b_outage_theta.png`（debug：outage θ，越低越好）
   - `fig5c_avg_utility.png`
   - `fig5d_avg_reliability.png`
+  - `fig5d_avg_reliability_severity.png`（severity-weighted：UE1/UE2/System reliability 的时间平均）
   - `fig5d_outage_theta.png`（debug：outage θ，越低越好）
 - `config_used.yaml`（若未安装 PyYAML 则为 `config_used.json`）
 
@@ -140,7 +142,7 @@ export GOOGLE_API_KEY="..."
 - **时间线**（默认配置对齐论文图4叙述）：
   - `t∈[0,100)`：未启用 slicing 控制的默认阶段，固定 PRB 分配（默认 `prb1=96, prb2=32`）→ UE1≈30 Mbps、UE2≈10 Mbps
   - `t∈[100,200)`：slice init + 初始化均分阶段，固定 `prb1=prb2=64` → UE1≈20 Mbps、UE2≈10 Mbps
-  - `t≥200`：方法策略生效并进入对比阶段；同时启用 **demand schedule**（默认：`sigma1` 在 `t=200` 变为 30、在 `t=400` 变为 45；`sigma2` 保持 10），用于制造 “可行→不可行” 的切换与 trade-off
+  - `t≥200`：方法策略生效并进入对比阶段；同时启用 **demand schedule**（默认：`sigma1` 在 `t=200` 变为 35、在 `t=400` 变为 45；`sigma2` 保持 10），用于制造 “可行→不可行” 的切换与 trade-off
 - **system 指标聚合方式**：
   - `system_utility(t)`：按 β 权重加权平均，默认 `w1 = beta1 / (beta1 + beta2)`
   - `system_outage_theta(t) = mean(outage_theta1(t), outage_theta2(t))`（简单平均）

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import os
 import math
 from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
 
 from .config import ExperimentConfig
 from .metrics import moving_average_trailing
+
+# Ensure Matplotlib config/cache lives in the repo (avoids permission issues in some sandboxed environments).
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+os.environ.setdefault("MPLCONFIGDIR", str(_REPO_ROOT / ".mplconfig"))
 
 
 # Explicit UE colors (paper-style, consistent across machines/styles)
@@ -73,6 +78,37 @@ def _save_figure(fig, out_path: str | Path, *, dpi: int = 150) -> None:
     fig.savefig(path.with_suffix(".pdf"), dpi=dpi)
 
 
+_FONT_CHECKED = False
+
+
+def _configure_matplotlib_style() -> None:
+    """Force a consistent font/style across all figures."""
+
+    import matplotlib
+
+    global _FONT_CHECKED
+    if not _FONT_CHECKED:
+        try:
+            from matplotlib import font_manager
+
+            # Enforce Times New Roman strictly (no silent fallback).
+            font_manager.findfont("Times New Roman", fallback_to_default=False)
+        except Exception as e:
+            raise RuntimeError(
+                "Times New Roman font was not found by Matplotlib. "
+                "Please install Times New Roman on this system so figures can be generated with the required font."
+            ) from e
+        _FONT_CHECKED = True
+
+    matplotlib.rcParams.update(
+        {
+            "font.family": "Times New Roman",
+            "pdf.fonttype": 42,  # TrueType (avoid Type3 fonts in PDF)
+            "ps.fonttype": 42,
+        }
+    )
+
+
 def plot_fig4_grid(
     *,
     cfg: ExperimentConfig,
@@ -86,6 +122,7 @@ def plot_fig4_grid(
     import matplotlib
 
     matplotlib.use("Agg")
+    _configure_matplotlib_style()
     import matplotlib.pyplot as plt
 
     n_panels = len(methods_order)
@@ -175,6 +212,7 @@ def plot_fig4_single(
     import matplotlib
 
     matplotlib.use("Agg")
+    _configure_matplotlib_style()
     import matplotlib.pyplot as plt
 
     t = list(result["t"])
@@ -219,6 +257,7 @@ def plot_fig5_sys_curve(
     import matplotlib
 
     matplotlib.use("Agg")
+    _configure_matplotlib_style()
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 4))
@@ -291,6 +330,7 @@ def plot_fig5_bars(
     import matplotlib
 
     matplotlib.use("Agg")
+    _configure_matplotlib_style()
     import matplotlib.pyplot as plt
 
     groups = list(keys)  # e.g., ["UE1","UE2","System"]
