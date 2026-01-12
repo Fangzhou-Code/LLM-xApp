@@ -373,7 +373,6 @@ def plot_fig5_sys_curve(
     _save_figure(fig, out_path)
     plt.close(fig)
 
-
 def plot_fig5_bars(
     *,
     averages_by_method: Mapping[str, Mapping[str, float]],
