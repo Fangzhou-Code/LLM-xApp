@@ -23,13 +23,8 @@ UE2_COLOR = "#B22222"  # firebrick
 # Default palette for grouped bars / multi-method comparisons (dark→light).
 METHOD_PALETTE = ["#324C63", "#386195", "#3981AF", "#5499BD", "#6FB9D0", "#91CDC8"]
 
-# Fig.5a/5b system-curve palette (requested).
-SYS_CURVE_COLORS = {
-    "equal": "#383838",
-    "proportional": "#5CA7C7",
-    "tnas": "#D4352D",  # LLM curve (tnas_* variants)
-    "random": "#FBCE6A",
-}
+# Fig.5a/5b system-curve palette (requested; used sequentially in legend order).
+SYS_CURVE_PALETTE = ["#324C63", "#386195", "#3981AF", "#5499BD", "#6FB9D0", "#91CDC8"]
 
 
 def _build_method_color_map(methods_order: Sequence[str]) -> Dict[str, str]:
@@ -59,15 +54,11 @@ def _build_method_color_map(methods_order: Sequence[str]) -> Dict[str, str]:
 
 
 def _build_sys_curve_color_map(methods_order: Sequence[str]) -> Dict[str, str]:
-    """Color map for Fig.5a/5b system curves."""
+    """Color map for Fig.5a/5b system curves (sequential palette)."""
 
     colors: Dict[str, str] = {}
-    for k in methods_order:
-        kk = str(k).lower()
-        if kk in SYS_CURVE_COLORS:
-            colors[k] = SYS_CURVE_COLORS[kk]
-        elif kk.startswith("tnas_") or kk == "tnas":
-            colors[k] = SYS_CURVE_COLORS["tnas"]
+    for i, k in enumerate(methods_order):
+        colors[k] = SYS_CURVE_PALETTE[i % len(SYS_CURVE_PALETTE)]
     return colors
 
 

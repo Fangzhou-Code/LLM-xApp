@@ -741,19 +741,8 @@ def main() -> None:
         if k not in methods_order:
             methods_order.append(k)
 
-    # For Fig.5a/5b, optionally keep only a single representative LLM curve to avoid clutter.
-    # Requested: keep only GPT-4o-mini when multiple LLM variants exist.
+    # Fig.5a/5b: keep all curves (baselines + all LLM variants).
     methods_order_sys = list(methods_order)
-    if len(tnas_keys) > 1:
-        preferred = None
-        for k in tnas_keys:
-            name = str(display_name_by_key.get(k, k)).lower()
-            kk = str(k).lower()
-            if "gpt-4o-mini" in name or "gpt-4o-mini" in kk:
-                preferred = k
-                break
-        if preferred is not None:
-            methods_order_sys = baseline_keys + [preferred]
 
     # Always write a per-method Fig4 panel for every produced method/variant.
     for k in methods_order:
@@ -796,6 +785,8 @@ def main() -> None:
         title="Fig.5b Smoothed Severity-weighted System Reliability",
         ylabel="Severity-weighted System Reliability",
         display_names=display_name_by_key,
+        legend_loc="upper right",
+        legend_bbox_to_anchor=None,
     )
 
     plot_fig5_bars(
