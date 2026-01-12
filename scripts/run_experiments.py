@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path as _Path
+
+# Allow running as a script: `python scripts/run_experiments.py`
+_PROJECT_ROOT = _Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 import argparse
 import logging
 import math
@@ -597,7 +605,8 @@ def main() -> None:
             for prov, model in llm_runs:
                 key = f"tnas_{prov}_{_sanitize_name(model)}"
                 tnas_variant_keys.append(key)
-                display_name_by_key[key] = f"TNAS ({prov}:{model})"
+                # Figure legend label: show only the model name, without provider or "TNAS".
+                display_name_by_key[key] = f"LLM ({model})"
                 run_specs.append((key, prov, model))
 
         for method_key, llm_provider, llm_model in run_specs:
