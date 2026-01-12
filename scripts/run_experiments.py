@@ -741,6 +741,20 @@ def main() -> None:
         if k not in methods_order:
             methods_order.append(k)
 
+    # For Fig.5a/5b, optionally keep only a single representative LLM curve to avoid clutter.
+    # Requested: keep only GPT-4o-mini when multiple LLM variants exist.
+    methods_order_sys = list(methods_order)
+    if len(tnas_keys) > 1:
+        preferred = None
+        for k in tnas_keys:
+            name = str(display_name_by_key.get(k, k)).lower()
+            kk = str(k).lower()
+            if "gpt-4o-mini" in name or "gpt-4o-mini" in kk:
+                preferred = k
+                break
+        if preferred is not None:
+            methods_order_sys = baseline_keys + [preferred]
+
     # Always write a per-method Fig4 panel for every produced method/variant.
     for k in methods_order:
         plot_fig4_single(
@@ -764,7 +778,7 @@ def main() -> None:
     plot_fig5_sys_curve(
         cfg=cfg,
         results_by_method=results_by_method,
-        methods_order=methods_order,
+        methods_order=methods_order_sys,
         series_key="sys_u",
         out_path=str(out_dir / "fig5a_sys_utility.png"),
         title="Fig.5a Smoothed System Utility",
@@ -776,32 +790,11 @@ def main() -> None:
     plot_fig5_sys_curve(
         cfg=cfg,
         results_by_method=results_by_method,
-        methods_order=methods_order,
-        series_key="system_reliability",
-        out_path=str(out_dir / "fig5b_sys_reliability.png"),
-        title="Fig.5b Smoothed System Reliability (reliability = 1 - outage θ)",
-        ylabel="System Reliability",
-        display_names=display_name_by_key,
-    )
-    plot_fig5_sys_curve(
-        cfg=cfg,
-        results_by_method=results_by_method,
-        methods_order=methods_order,
+        methods_order=methods_order_sys,
         series_key="system_reliability_severity",
         out_path=str(out_dir / "fig5b_sys_reliability_severity.png"),
         title="Fig.5b Smoothed Severity-weighted System Reliability",
         ylabel="Severity-weighted System Reliability",
-        display_names=display_name_by_key,
-    )
-    # Optional debug view (outage fraction; lower is better).
-    plot_fig5_sys_curve(
-        cfg=cfg,
-        results_by_method=results_by_method,
-        methods_order=methods_order,
-        series_key="system_outage_theta",
-        out_path=str(out_dir / "fig5b_outage_theta.png"),
-        title="Fig.5b (debug) Smoothed System Outage θ (outage fraction)",
-        ylabel="System Outage θ",
         display_names=display_name_by_key,
     )
 
@@ -812,22 +805,6 @@ def main() -> None:
         title=f"Fig.5c Time-averaged Utility (t≥{cfg.baseline_start_time}s)",
         ylabel="Utility",
         out_path=str(out_dir / "fig5c_avg_utility.png"),
-        display_names=display_name_by_key,
-    )
-    plot_fig5_bars(
-        averages_by_method={
-            m: {
-                "UE1": averages_by_method[m]["UE1_reliability"],
-                "UE2": averages_by_method[m]["UE2_reliability"],
-                "System": averages_by_method[m]["System_reliability"],
-            }
-            for m in methods_order
-        },
-        methods_order=methods_order,
-        keys=["UE1", "UE2", "System"],
-        title=f"Fig.5d Time-averaged Reliability (t≥{cfg.baseline_start_time}s; higher is better)",
-        ylabel="Reliability",
-        out_path=str(out_dir / "fig5d_avg_reliability.png"),
         display_names=display_name_by_key,
     )
     plot_fig5_bars(
@@ -844,23 +821,6 @@ def main() -> None:
         title=f"Fig.5d Time-averaged Severity-weighted Reliability (t≥{cfg.baseline_start_time}s; higher is better)",
         ylabel="Severity-weighted Reliability",
         out_path=str(out_dir / "fig5d_avg_reliability_severity.png"),
-        display_names=display_name_by_key,
-    )
-    # Optional debug bars (outage fraction; lower is better).
-    plot_fig5_bars(
-        averages_by_method={
-            m: {
-                "UE1": averages_by_method[m]["UE1_outage_theta"],
-                "UE2": averages_by_method[m]["UE2_outage_theta"],
-                "System": averages_by_method[m]["System_outage_theta"],
-            }
-            for m in methods_order
-        },
-        methods_order=methods_order,
-        keys=["UE1", "UE2", "System"],
-        title=f"Fig.5d (debug) Time-averaged Outage θ (t≥{cfg.baseline_start_time}s; lower is better)",
-        ylabel="Outage θ",
-        out_path=str(out_dir / "fig5d_outage_theta.png"),
         display_names=display_name_by_key,
     )
 

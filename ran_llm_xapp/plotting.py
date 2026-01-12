@@ -17,6 +17,59 @@ os.environ.setdefault("MPLCONFIGDIR", str(_REPO_ROOT / ".mplconfig"))
 UE1_COLOR = "#000080"  # navy
 UE2_COLOR = "#B22222"  # firebrick
 
+# Method colors (used in Fig.5 curves/bars). Chosen to harmonize with UE colors in Fig.4.
+# - Avoid bright blues that clash with UE1 (navy).
+# - Keep good contrast for print/PDF.
+# Default palette for grouped bars / multi-method comparisons (dark→light).
+METHOD_PALETTE = ["#324C63", "#386195", "#3981AF", "#5499BD", "#6FB9D0", "#91CDC8"]
+
+# Fig.5a/5b system-curve palette (requested).
+SYS_CURVE_COLORS = {
+    "equal": "#383838",
+    "proportional": "#5CA7C7",
+    "tnas": "#D4352D",  # LLM curve (tnas_* variants)
+    "random": "#FBCE6A",
+}
+
+
+def _build_method_color_map(methods_order: Sequence[str]) -> Dict[str, str]:
+    """Assign colors consistently across Fig.5 plots.
+
+    - Baselines get fixed colors (first 3).
+    - Each LLM variant (keys like `tnas_*`) gets a distinct color from the remaining palette.
+      If there are more variants than colors, the variant colors cycle.
+    """
+
+    base = {
+        "equal": METHOD_PALETTE[0],
+        "random": METHOD_PALETTE[1],
+        "proportional": METHOD_PALETTE[2],
+    }
+    variant_palette = METHOD_PALETTE[3:] or METHOD_PALETTE
+    variant_keys: List[str] = []
+    for k in methods_order:
+        kk = str(k).lower()
+        if kk.startswith("tnas_") or kk == "tnas":
+            if k not in variant_keys:
+                variant_keys.append(k)
+    colors = dict(base)
+    for i, k in enumerate(variant_keys):
+        colors[k] = variant_palette[i % len(variant_palette)]
+    return colors
+
+
+def _build_sys_curve_color_map(methods_order: Sequence[str]) -> Dict[str, str]:
+    """Color map for Fig.5a/5b system curves."""
+
+    colors: Dict[str, str] = {}
+    for k in methods_order:
+        kk = str(k).lower()
+        if kk in SYS_CURVE_COLORS:
+            colors[k] = SYS_CURVE_COLORS[kk]
+        elif kk.startswith("tnas_") or kk == "tnas":
+            colors[k] = SYS_CURVE_COLORS["tnas"]
+    return colors
+
 
 def _ceil_to_step(x: float, step: int) -> int:
     if step <= 0:
@@ -84,7 +137,13 @@ _FONT_CHECKED = False
 def _configure_matplotlib_style() -> None:
     """Force a consistent font/style across all figures."""
 
+    import logging
     import matplotlib
+
+    # fontTools emits verbose INFO logs when subsetting fonts for PDF output.
+    # Silence them to keep experiment logs clean.
+    logging.getLogger("fontTools").setLevel(logging.WARNING)
+    logging.getLogger("fontTools.subset").setLevel(logging.WARNING)
 
     global _FONT_CHECKED
     if not _FONT_CHECKED:
@@ -103,6 +162,12 @@ def _configure_matplotlib_style() -> None:
     matplotlib.rcParams.update(
         {
             "font.family": "Times New Roman",
+            "font.size": 14,
+            "axes.labelsize": 14,
+            "axes.titlesize": 14,
+            "xtick.labelsize": 14,
+            "ytick.labelsize": 14,
+            "legend.fontsize": 14,
             "pdf.fonttype": 42,  # TrueType (avoid Type3 fonts in PDF)
             "ps.fonttype": 42,
         }
@@ -180,6 +245,7 @@ def plot_fig4_grid(
             ax.set_ylabel("Measured data rate (Mbps)")
         if i >= (ncols * (nrows - 1)):
             ax.set_xlabel("Time (s)")
+        del title_name
 
     # Turn off any unused axes.
     for j in range(n_panels, len(flat_axes)):
@@ -264,6 +330,7 @@ def plot_fig5_sys_curve(
 
     # Determine plotting start time (default: baseline_start_time)
     start_t = int(cfg.baseline_start_time)
+    color_by_method = _build_sys_curve_color_map(methods_order)
 
     def _start_idx_from_t(t_series: Sequence[float], start_time: int) -> int:
         for i, tv in enumerate(t_series):
@@ -277,6 +344,7 @@ def plot_fig5_sys_curve(
     for method in methods_order:
         res = results_by_method[method]
         label = display_names.get(method, method) if display_names else method
+        color = color_by_method.get(method)
         t_full = list(res["t"])
         raw = list(res[series_key])
         smooth = moving_average_trailing(raw, cfg.smooth_window)
@@ -290,7 +358,7 @@ def plot_fig5_sys_curve(
             t_plot = t_full[start_idx:]
             smooth_plot = smooth[start_idx:]
 
-        ax.plot(t_plot, smooth_plot, label=label, linewidth=1.7)
+        ax.plot(t_plot, smooth_plot, label=label, linewidth=1.7, color=color)
 
     # Draw vertical markers only if they lie within plotted range
     plotted_xlim = (start_t, None)
@@ -337,6 +405,7 @@ def plot_fig5_bars(
     n_groups = len(groups)
     n_methods = max(1, len(methods_order))
     x = list(range(n_groups))
+    color_by_method = _build_method_color_map(methods_order)
 
     # Avoid overlap when many methods are plotted (e.g., multiple TNAS variants):
     # keep the total span of bars within each group < 1.0 (group spacing).
@@ -348,11 +417,12 @@ def plot_fig5_bars(
     fig, ax = plt.subplots(1, 1, figsize=(fig_w, 4.2))
     for i, method in enumerate(methods_order):
         label = display_names.get(method, method) if display_names else method
+        color = color_by_method.get(method)
         vals = [float(averages_by_method[method][k]) for k in groups]
-        ax.bar([xi + offsets[i] for xi in x], vals, width=float(width), label=label)
+        ax.bar([xi + offsets[i] for xi in x], vals, width=float(width), label=label, color=color)
 
     ax.set_xticks(x)
-    ax.set_xticklabels(groups, fontsize=11)
+    ax.set_xticklabels(groups)
     ax.set_ylabel(ylabel)
     ax.set_axisbelow(True)
     ax.grid(True, axis="y", alpha=0.25)

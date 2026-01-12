@@ -10,7 +10,8 @@ from .config import ExperimentConfig
 def utility_s1_sigmoid(hat_sigma_mbps: float, sigma_mbps: float, *, a: float, b: float) -> float:
     """Utility for high-priority slice S1 (paper Eq.(1), sigmoid)."""
 
-    return 1.0 / (1.0 + math.exp(-((a * (hat_sigma_mbps - sigma_mbps)) + b)))
+    # Paper Eq.(1): U = 1 / (1 + exp(-a * (hatσ - σ + b)))
+    return 1.0 / (1.0 + math.exp(-(a * (hat_sigma_mbps - sigma_mbps + b))))
 
 
 def utility_s2_log_ratio(hat_sigma_mbps: float, sigma_mbps: float, *, c: float) -> float:
