@@ -58,11 +58,11 @@ def _write_bar_pdf(
     matplotlib.rcParams.update(
         {
             "font.family": "Times New Roman",
-            "font.size": 14,
-            "axes.labelsize": 14,
-            "xtick.labelsize": 14,
-            "ytick.labelsize": 14,
-            "legend.fontsize": 14,
+            "font.size": 16,
+            "axes.labelsize": 16,
+            "xtick.labelsize": 16,
+            "ytick.labelsize": 16,
+            "legend.fontsize": 16,
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
         }
@@ -81,11 +81,21 @@ def _write_bar_pdf(
         vals = [float(values.get((seed, model), float("nan"))) for seed in seeds]
         ax.bar([xi + offsets[i] for xi in x], vals, width=width * 0.95, label=model, color=colors[i % len(colors)])
 
+    # Keep the legend inside the plot box but higher to reduce overlap with bars.
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.995),
+        ncol=min(3, len(models)),
+        frameon=True,
+        borderaxespad=0.1,
+    )
+
     ax.set_xticks(x)
     ax.set_xticklabels([str(s) for s in seeds])
     ax.set_xlabel("Seed")
     ax.set_ylabel(ylabel)
-    ax.set_ylim(0.0, 1.1)
+    # Add extra headroom so the in-box legend doesn't overlap the tallest bars.
+    ax.set_ylim(0.0, 1.25)
     ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
     ax.grid(True, axis="y", alpha=0.25)
     ax.legend(loc="upper left", ncol=3, frameon=False, bbox_to_anchor=(0.02, 0.98))

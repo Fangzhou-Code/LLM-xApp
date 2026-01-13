@@ -153,12 +153,12 @@ def _configure_matplotlib_style() -> None:
     matplotlib.rcParams.update(
         {
             "font.family": "Times New Roman",
-            "font.size": 14,
-            "axes.labelsize": 14,
-            "axes.titlesize": 14,
-            "xtick.labelsize": 14,
-            "ytick.labelsize": 14,
-            "legend.fontsize": 14,
+            "font.size": 16,
+            "axes.labelsize": 16,
+            "axes.titlesize": 16,
+            "xtick.labelsize": 16,
+            "ytick.labelsize": 16,
+            "legend.fontsize": 16,
             "pdf.fonttype": 42,  # TrueType (avoid Type3 fonts in PDF)
             "ps.fonttype": 42,
         }
