@@ -45,6 +45,19 @@ python3 -m scripts.run_experiments --methods all2 --seed 0 --out outputs/all2_st
   --llm-runs stub:stub
 ```
 
+## Seed Sweep（不同 seed 对比）
+
+用于比较不同随机种子下，多个真实大模型的 **System Utility** 与 **System Reliability**（柱状图，seed 固定为 `0,3,6,9`）：
+```bash
+python3 -m scripts.run_seed_sweep_sys_metrics \
+  --llm-runs openai:gpt-4o-mini deepseek:deepseek-v3.2 google:gemini-3-pro
+```
+
+输出目录：`outputs/seed_sweep/`
+- `seed_sweep.csv`：包含 `seed, model, mean_system_utility, mean_system_reliability`
+- `seed_sweep_sys_utility.pdf`
+- `seed_sweep_sys_reliability.pdf`
+
 在线 LLM（可选）：
 ```bash
 python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_openai \
