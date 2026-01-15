@@ -26,6 +26,40 @@ METHOD_PALETTE = ["#324C63", "#386195", "#3981AF", "#5499BD", "#6FB9D0", "#91CDC
 # Fig.5a/5b system-curve palette (requested; used sequentially in legend order).
 SYS_CURVE_PALETTE = ["#324C63", "#386195", "#3981AF", "#5499BD", "#6FB9D0", "#91CDC8"]
 
+# Unify figure aspect ratio across all exported figures.
+# Keep the target ratio aligned with the existing Fig.4 single / Fig.5 curve defaults (10x4).
+FIG_ASPECT = 2.5  # width / height
+FIG_BASE_W = 10.0
+
+
+def _figsize_from_width(fig_w: float, *, aspect: float = FIG_ASPECT) -> tuple[float, float]:
+    w = float(fig_w)
+    a = float(aspect)
+    if a <= 0:
+        raise ValueError("aspect must be positive")
+    return (w, w / a)
+
+
+def _figsize_grid(
+    *,
+    ncols: int,
+    nrows: int,
+    min_cell_w: float = 4.8,
+    min_cell_h: float = 3.2,
+    aspect: float = FIG_ASPECT,
+) -> tuple[float, float]:
+    """Choose a grid figure size that keeps a fixed aspect ratio."""
+
+    nc = max(1, int(ncols))
+    nr = max(1, int(nrows))
+    w0 = float(min_cell_w) * float(nc)
+    h0 = float(min_cell_h) * float(nr)
+    a = float(aspect)
+    if a <= 0:
+        raise ValueError("aspect must be positive")
+    w = max(w0, a * h0)
+    return (w, w / a)
+
 
 def _build_method_color_map(methods_order: Sequence[str]) -> Dict[str, str]:
     """Assign colors consistently across Fig.5 plots.
@@ -97,6 +131,22 @@ def _apply_fig4_yaxis(ax, *, cfg: ExperimentConfig, tick_step: int = 5) -> None:
     ymax = _fig4_ymax(cfg, tick_step=tick_step)
     ax.set_ylim(0.0, float(ymax))
     ax.set_yticks(list(range(0, int(ymax) + 1, int(tick_step))))
+
+
+def _apply_fig4_xaxis(ax, *, cfg: ExperimentConfig) -> None:
+    """Force Fig.4 time axis to span exactly [0, T_end] with no extra padding."""
+
+    t_end = int(getattr(cfg, "T_end", 800))
+    ax.set_xlim(0.0, float(t_end))
+    ax.margins(x=0.0)
+
+
+def _apply_fig5_xaxis(ax, *, cfg: ExperimentConfig, start_t: int) -> None:
+    """Force Fig.5 time axis to span exactly [start_t, T_end] with no extra padding."""
+
+    t_end = int(getattr(cfg, "T_end", 800))
+    ax.set_xlim(float(start_t), float(t_end))
+    ax.margins(x=0.0)
 
 
 def _demand_change_times(cfg: ExperimentConfig) -> List[int]:
@@ -199,7 +249,7 @@ def plot_fig4_grid(
     fig, axes = plt.subplots(
         nrows,
         ncols,
-        figsize=(4.8 * ncols, 3.2 * nrows),
+        figsize=_figsize_grid(ncols=ncols, nrows=nrows),
         sharex=True,
         sharey=True,
     )
@@ -230,6 +280,7 @@ def plot_fig4_grid(
         ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0)
         for t0 in _demand_change_times(cfg):
             ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0)
+        _apply_fig4_xaxis(ax, cfg=cfg)
         _apply_fig4_yaxis(ax, cfg=cfg, tick_step=5)
         ax.grid(True, alpha=0.3)
         if (i % ncols) == 0:
@@ -276,13 +327,14 @@ def plot_fig4_single(
     ue1 = list(result["hat_sigma1"])
     ue2 = list(result["hat_sigma2"])
 
-    fig, ax = plt.subplots(1, 1, figsize=(10, 4))
+    fig, ax = plt.subplots(1, 1, figsize=_figsize_from_width(FIG_BASE_W))
     ax.plot(t, ue1, label="UE1 / S1", linewidth=1.5, color=UE1_COLOR)
     ax.plot(t, ue2, label="UE2 / S2", linewidth=1.5, color=UE2_COLOR)
     ax.axvline(cfg.slice_init_time, color="k", linestyle="--", linewidth=1.0, label="slice init")
     ax.axvline(cfg.baseline_start_time, color="k", linestyle=":", linewidth=1.0, label="allocation starts")
     for t0 in _demand_change_times(cfg):
         ax.axvline(t0, color="0.5", linestyle="-.", linewidth=1.0, label="demand change")
+    _apply_fig4_xaxis(ax, cfg=cfg)
     _apply_fig4_yaxis(ax, cfg=cfg, tick_step=5)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Measured data rate (Mbps)")
@@ -317,7 +369,7 @@ def plot_fig5_sys_curve(
     _configure_matplotlib_style()
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(1, 1, figsize=(10, 4))
+    fig, ax = plt.subplots(1, 1, figsize=_figsize_from_width(FIG_BASE_W))
 
     # Determine plotting start time (default: baseline_start_time)
     start_t = int(cfg.baseline_start_time)
@@ -350,6 +402,8 @@ def plot_fig5_sys_curve(
             smooth_plot = smooth[start_idx:]
 
         ax.plot(t_plot, smooth_plot, label=label, linewidth=1.7, color=color)
+
+    _apply_fig5_xaxis(ax, cfg=cfg, start_t=start_t)
 
     # Draw vertical markers only if they lie within plotted range
     plotted_xlim = (start_t, None)
@@ -404,7 +458,7 @@ def plot_fig5_bars(
     offsets = [(i - (n_methods - 1) / 2.0) * width for i in range(n_methods)]
 
     fig_w = max(10.0, 7.0 + 0.9 * float(n_methods))
-    fig, ax = plt.subplots(1, 1, figsize=(fig_w, 4.2))
+    fig, ax = plt.subplots(1, 1, figsize=_figsize_from_width(fig_w))
     for i, method in enumerate(methods_order):
         label = display_names.get(method, method) if display_names else method
         color = color_by_method.get(method)

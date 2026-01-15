@@ -11,6 +11,7 @@ from typing import Dict, List, Tuple
 from ran_llm_xapp.config import ExperimentConfig
 from ran_llm_xapp.io_utils import PromptResponseCache, ensure_dir, load_dotenv
 from scripts.run_experiments import run_single_method
+from scripts.run_experiments import _pretty_model_label
 
 
 OUT_DIR = Path("outputs/seed_sweep")
@@ -69,7 +70,9 @@ def _write_bar_pdf(
     )
 
     colors = ["#000000", "#2C939A", "#A6A3A4"]
-    fig, ax = plt.subplots(1, 1, figsize=(8.5, 3.8))
+    fig_w = 8.5
+    fig_aspect = 2.5  # match Fig.4/Fig.5 exports
+    fig, ax = plt.subplots(1, 1, figsize=(fig_w, fig_w / fig_aspect))
 
     x = list(range(len(seeds)))
     n_models = max(1, len(models))
@@ -78,17 +81,9 @@ def _write_bar_pdf(
     offsets = [(i - (n_models - 1) / 2.0) * width for i in range(n_models)]
 
     for i, model in enumerate(models):
+        pretty_label = _pretty_model_label(model)
         vals = [float(values.get((seed, model), float("nan"))) for seed in seeds]
-        ax.bar([xi + offsets[i] for xi in x], vals, width=width * 0.95, label=model, color=colors[i % len(colors)])
-
-    # Keep the legend inside the plot box but higher to reduce overlap with bars.
-    ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.995),
-        ncol=min(3, len(models)),
-        frameon=True,
-        borderaxespad=0.1,
-    )
+        ax.bar([xi + offsets[i] for xi in x], vals, width=width * 0.95, label=pretty_label, color=colors[i % len(colors)])
 
     ax.set_xticks(x)
     ax.set_xticklabels([str(s) for s in seeds])
@@ -98,8 +93,14 @@ def _write_bar_pdf(
     ax.set_ylim(0.0, 1.25)
     ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
     ax.grid(True, axis="y", alpha=0.25)
-    ax.legend(loc="upper left", ncol=3, frameon=False, bbox_to_anchor=(0.02, 0.98))
-    fig.tight_layout()
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.995),
+        ncol=min(3, len(models)),
+        frameon=False,
+        borderaxespad=0.0,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_pdf)
     plt.close(fig)

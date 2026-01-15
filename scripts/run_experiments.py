@@ -90,6 +90,29 @@ def _default_model_for_provider(provider: str) -> str:
     return "stub"
 
 
+_PRETTY_METHOD_LABELS = {
+    "equal": "Equal",
+    "random": "Random",
+    "proportional": "Proportional",
+}
+
+
+_PRETTY_MODEL_LABELS = {
+    "gpt-4o-mini": "GPT-4o-mini",
+    "deepseek-v3.2": "DeepSeek-v3.2",
+    "gemini-2.0-flash": "Gemini-2.0-Flash",
+}
+
+
+def _pretty_method_label(name: str) -> str:
+    return _PRETTY_METHOD_LABELS.get(str(name).lower(), name)
+
+
+def _pretty_model_label(name: str) -> str:
+    key = str(name).strip().lower()
+    return _PRETTY_MODEL_LABELS.get(key, name)
+
+
 def _parse_llm_runs(args: argparse.Namespace) -> List[Tuple[str, str]]:
     """Parse `--llm-runs` into [(provider, model), ...]."""
 
@@ -599,14 +622,15 @@ def main() -> None:
     for method in methods:
         run_specs: List[Tuple[str, str, str]] = []
         if method != "tnas":
+            pretty = _pretty_method_label(method)
             run_specs.append((method, default_provider, default_model))
-            display_name_by_key[method] = method
+            display_name_by_key[method] = pretty
         else:
             for prov, model in llm_runs:
                 key = f"tnas_{prov}_{_sanitize_name(model)}"
                 tnas_variant_keys.append(key)
-                # Figure legend label: show only the model name, without provider or "TNAS".
-                display_name_by_key[key] = f"LLM ({model})"
+                # Figure legend label: show only the model name, normalized per requirement.
+                display_name_by_key[key] = _pretty_model_label(model)
                 run_specs.append((key, prov, model))
 
         for method_key, llm_provider, llm_model in run_specs:
