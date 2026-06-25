@@ -1,16 +1,84 @@
 # RAN-LLM-xApp
 
-本项目是基于论文《LLM-xApp: A Large Language Model Empowered Radio Resource Management xApp for 5G O-RAN》的思想与指标定义，构建的**纯本地 Python 合成仿真研究原型**，用于在可控环境下验证/扩展论文方法并开展创新实验；**不是对原论文 testbed 的严格复现**，也不追求数值逐点对齐（输出曲线主要呈现同类信息量与相近趋势形态）。
+[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/Research-Prototype-2F855A?style=flat)](#)
+[![Paper](https://img.shields.io/badge/INFOCOM%20Workshop-2026%20Accepted-B31B1B?style=flat)](#paper-status)
 
-关键点：
-- **不依赖** OAIC testbed / srsRAN / O-RAN 组件
-- 实现并扩展论文关键定义：Utility(式(1)(2))、Reliability(滑窗 Tw)、动作到 PRB 映射(式(7) + 超预算修正)、评价函数(式(8), 默认 `g(x)=-x^2`)
-- 在论文方法基础上加入工程化/算法改动（如 RealScore-driven TNAS、多模型对比与更稳定的度量/惩罚项），便于研究与创新验证
-- 实现 4 个方法：`equal` / `random` / `proportional` / `tnas`（Top-N Action Sampling）
+## Paper Status
 
-## 安装
+**English.** This repository is associated with the paper **"LLM-xApp: A Large Language Model Empowered Radio Resource Management xApp for 5G O-RAN"**, which has been **accepted by INFOCOM Workshop 2026**.
 
-建议使用虚拟环境：
+**中文。** 本仓库关联论文 **《LLM-xApp: A Large Language Model Empowered Radio Resource Management xApp for 5G O-RAN》**。该论文已被 **INFOCOM Workshop 2026** 接收。
+
+## Overview
+
+**English.** RAN-LLM-xApp is a research-grade, pure-Python simulation framework for studying LLM-assisted radio resource management in 5G O-RAN slicing scenarios. It implements the key metric definitions and decision pipeline inspired by the LLM-xApp paper, including utility functions, sliding-window reliability, action-to-PRB mapping, local evaluation, and LLM-assisted candidate generation.
+
+This repository is designed for controlled algorithmic research, ablation studies, and reproducible experimentation. It does **not** depend on OAIC, srsRAN, or a live O-RAN testbed, and it is **not** intended to be a bit-level reproduction of the original experimental testbed. Instead, it provides a compact and inspectable platform for validating method behavior, extending the controller, and comparing LLM-backed policies under transparent synthetic dynamics.
+
+**中文。** RAN-LLM-xApp 是一个面向研究的纯 Python 仿真框架，用于探索大语言模型辅助的 5G O-RAN 切片无线资源管理。项目实现了 LLM-xApp 论文中的关键指标定义与决策流程，包括 utility、滑动窗口 reliability、动作到 PRB 的映射、本地评价函数，以及 LLM 辅助候选动作生成。
+
+本仓库的定位是可控算法研究、消融实验与可复现实验平台。它**不依赖** OAIC、srsRAN 或真实 O-RAN testbed，也**不追求**与原论文 testbed 的逐点数值复现。相反，它提供了一个结构清晰、易于审计和扩展的研究原型，用于验证方法趋势、扩展控制器逻辑，并在透明的合成环境中比较多种 LLM-backed 策略。
+
+## What Is Implemented
+
+**English.**
+
+- Four allocation policies: `equal`, `random`, `proportional`, and `tnas`.
+- Paper-inspired metrics:
+  - Utility functions for two slices.
+  - Sliding-window outage/reliability.
+  - Eq.(7)-style action-to-PRB mapping with budget correction.
+  - Eq.(8)-style local evaluation with `g(x) = -x^2`.
+- TNAS: Top-N Action Sampling with **LLM proposal + local reranking**.
+- RealScore-driven local critic for online scoring of LLM-generated candidates.
+- Multi-model experiment support for OpenAI, DeepSeek, Google-compatible endpoints, and a local deterministic `stub`.
+- CSV and publication-style figure generation for time-series and aggregate metrics.
+
+**中文。**
+
+- 实现 4 类资源分配策略：`equal`、`random`、`proportional`、`tnas`。
+- 实现论文启发的关键指标：
+  - 双切片 utility 函数。
+  - 滑动窗口 outage/reliability。
+  - 类 Eq.(7) 的动作到 PRB 映射，并包含超预算修正。
+  - 类 Eq.(8) 的本地评价函数，默认 `g(x) = -x^2`。
+- TNAS：Top-N Action Sampling，即**大模型生成候选动作 + 本地可控重排序**。
+- RealScore-driven 本地 critic，用真实反馈在线学习候选动作评分。
+- 支持 OpenAI、DeepSeek、Google-compatible endpoint，以及纯本地确定性 `stub`。
+- 自动输出 CSV、时序图与聚合指标图，便于论文实验和结果分析。
+
+## Repository Structure
+
+```text
+ran_llm_xapp/
+  config.py              # Experiment configuration and default research scenario
+  env.py                 # Synthetic RAN slicing environment
+  metrics.py             # Utility, reliability, score, and PRB mapping functions
+  plotting.py            # Figure generation
+  prompts.py             # Prompt templates for LLM-assisted control
+  policies/
+    equal.py             # Equal allocation baseline
+    random.py            # Random allocation baseline
+    proportional.py      # Demand-proportional baseline
+    tnas.py              # Top-N Action Sampling policy
+  llm_clients/
+    openai_client.py     # OpenAI-compatible client
+    deepseek_client.py   # DeepSeek-compatible client
+    google_client.py     # Google-compatible client
+    stub_client.py       # Local deterministic LLM stub
+scripts/
+  run_experiments.py             # Main experiment runner
+  run_seed_sweep_sys_metrics.py  # Multi-seed system-metric sweep
+tests/                           # Unit tests for mapping and metrics
+```
+
+## Installation
+
+**English.** A virtual environment is recommended.
+
+**中文。** 建议使用虚拟环境安装。
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -18,147 +86,170 @@ python3 -m pip install -U pip
 python3 -m pip install -e .
 ```
 
-## 运行（CLI）
+On Windows PowerShell:
 
-命令入口（推荐）：  
-```bash
-python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/multi_llm \
-  --llm-runs openai:gpt-4o deepseek:deepseek-v3.2 google:gemini
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -e .
 ```
-该指令会把 `equal/random/proportional` 与 `tnas` 全部跑一遍，而各个 `--llm-runs` 模型会被当成独立的 `tnas_*` 变体一起对比，便于对齐论文中的 multi-LLM 实验设置并开展对比/创新分析。
 
-其他常见案例：
+## Quick Start
+
+**English.** Run all baselines and one local TNAS variant with the deterministic `stub` client:
+
+**中文。** 使用纯本地 `stub` 客户端运行所有 baseline 与一个 TNAS 变体：
+
 ```bash
-# 只跑 tnas（用纯本地 stub）
-python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_only \
-  --llm-runs stub:stub
-
-# 跑 equal + proportional
-python3 -m scripts.run_experiments --methods equal proportional --seed 0 --out outputs/eq_prop
-
-# 跑全部 base + tnas
-python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/all_stub \
-  --llm-runs stub:stub
-
-# 跑全部方法（包含 tnas；tnas 需要 --llm-runs）
 python3 -m scripts.run_experiments --methods all2 --seed 0 --out outputs/all2_stub \
   --llm-runs stub:stub
 ```
 
-## Seed Sweep（不同 seed 对比）
+**English.** Run baselines plus multiple LLM-backed TNAS variants:
 
-用于比较不同随机种子下，多个真实大模型的 **System Utility** 与 **System Reliability**（柱状图，seed 固定为 `0,3,6,9`）：
+**中文。** 运行 baseline，并对多个真实大模型的 TNAS 变体做对比：
+
 ```bash
+python3 -m scripts.run_experiments --methods all --seed 0 --out outputs/multi_llm \
+  --llm-runs openai:gpt-4o deepseek:deepseek-v3.2 google:gemini-3-pro
+```
+
+When `--llm-runs` is provided, each model is treated as an independent `tnas_*` variant and is included in the same comparison pipeline.
+
+当提供 `--llm-runs` 时，每个模型都会被视为一个独立的 `tnas_*` 变体，并进入同一套对比流程。
+
+## Common Commands
+
+```bash
+# TNAS only, using the local deterministic stub
+python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_only \
+  --llm-runs stub:stub
+
+# Equal + proportional baselines
+python3 -m scripts.run_experiments --methods equal proportional --seed 0 --out outputs/eq_prop
+
+# Baselines plus TNAS
+python3 -m scripts.run_experiments --methods all2 --seed 0 --out outputs/all2_stub \
+  --llm-runs stub:stub
+
+# Multi-seed system utility/reliability sweep
 python3 -m scripts.run_seed_sweep_sys_metrics \
   --llm-runs openai:gpt-4o-mini deepseek:deepseek-v3.2 google:gemini-3-pro
 ```
 
-输出目录：`outputs/seed_sweep/`
-- `seed_sweep.csv`：包含 `seed, model, mean_system_utility, mean_system_reliability`
-- `seed_sweep_sys_utility.pdf`
-- `seed_sweep_sys_reliability.pdf`
+## TNAS: Top-N Action Sampling
 
-在线 LLM（可选）：
+**English.** TNAS follows a deliberately conservative control architecture: the LLM proposes a diverse set of candidate actions, while the final decision is made by a local evaluator. This avoids handing full control authority to the LLM and makes the optimization process auditable.
+
+The control loop at each reconfiguration slot is:
+
+1. Build an observation from recent measured throughput, current demand, current PRB allocation, and soft-shortfall information.
+2. Ask the LLM to return Top-N candidate actions `(a1, a2)` in strict JSON format.
+3. Map each action to `(prb1, prb2)` using Eq.(7)-style proportional mapping with budget correction.
+4. Locally rerank candidates with either RealScore-driven scoring or deterministic proxy scoring.
+5. Execute the selected PRB allocation and record feedback for future slots.
+
+**中文。** TNAS 采用一种审慎的控制架构：LLM 只负责提出多样化候选动作，最终决策由本地评价器完成。这样可以避免将控制权完全交给 LLM，同时保证优化过程可审计、可复现、可调试。
+
+每个重配置 slot 的流程如下：
+
+1. 根据最近实测吞吐、当前需求、当前 PRB 分配和 soft-shortfall 构造观测。
+2. 要求 LLM 以严格 JSON 格式返回 Top-N 个候选动作 `(a1, a2)`。
+3. 使用类 Eq.(7) 的比例映射将动作转换为 `(prb1, prb2)`，并做预算修正。
+4. 使用 RealScore-driven scoring 或确定性 proxy scoring 对候选动作本地重排序。
+5. 执行最终 PRB 分配，并记录反馈用于后续 slot 的在线学习。
+
+Relevant files:
+
+- `ran_llm_xapp/policies/tnas.py`
+- `ran_llm_xapp/prompts.py`
+- `ran_llm_xapp/metrics.py`
+
+## Experiment Timeline and Metrics
+
+**English.** The default configuration is designed to produce paper-like RAN slicing dynamics:
+
+- `t in [0, 100)`: pre-slicing fixed allocation, default `prb1=96`, `prb2=32`.
+- `t in [100, 200)`: slice initialization with equal allocation, `prb1=64`, `prb2=64`.
+- `t >= 200`: policy-controlled allocation with a demand schedule.
+  - `sigma1=35`, `sigma2=10` from `t=200`.
+  - `sigma1=45`, `sigma2=10` from `t=400`.
+
+System-level metrics include weighted system utility, outage fraction, reliability, and severity-weighted reliability.
+
+**中文。** 默认配置用于构造接近论文叙述的 RAN slicing 动态：
+
+- `t in [0, 100)`：未启用 slicing 控制的固定分配阶段，默认 `prb1=96`、`prb2=32`。
+- `t in [100, 200)`：slice 初始化阶段，使用均分分配 `prb1=64`、`prb2=64`。
+- `t >= 200`：策略生效，并启用需求变化。
+  - 从 `t=200` 开始，`sigma1=35`、`sigma2=10`。
+  - 从 `t=400` 开始，`sigma1=45`、`sigma2=10`。
+
+系统级指标包括加权 system utility、outage fraction、reliability，以及 severity-weighted reliability。
+
+## LLM Provider Configuration
+
+**English.** API keys can be provided through `.env`. This repository intentionally requires explicit `*_BASE_URL` values so that experiments are reproducible across official endpoints, gateways, and local proxies.
+
+**中文。** 可以通过 `.env` 配置 API key。本项目要求显式设置 `*_BASE_URL`，这样可以在官方 endpoint、网关或本地代理之间保持实验配置可追踪。
+
 ```bash
-python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_openai \
-  --llm-runs openai:gpt-4o
-python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_deepseek \
-  --llm-runs deepseek:deepseek-v3.2
-python3 -m scripts.run_experiments --methods tnas --seed 0 --out outputs/tnas_google \
-  --llm-runs google:gemini-3-pro
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=...
+
+DEEPSEEK_API_KEY=...
+DEEPSEEK_BASE_URL=...
+
+GOOGLE_API_KEY=...
+GOOGLE_BASE_URL=...
 ```
 
-说明：
-- `--model` 不填时会按 `--provider` 自动选择默认：OpenAI→`gpt-4o-mini`，DeepSeek→`deepseek-chat`，Google→`gemini-3-pro`，stub→`stub`。
-- `--llm-runs` 的每项支持两种写法：
-  - `provider:model`（显式指定 provider）
-  - `model`（使用 `--provider` 作为默认 provider）
-- 当提供 `--llm-runs` 且 `--methods` 未包含 `tnas` 时，脚本会自动追加一次 `tnas`（改进版），并为每个 `--llm-runs` 变体生成独立的 `tnas_*` 结果。
-- `--methods all` 仅跑 equal/random/proportional；不过如果你同时传 `--llm-runs`，脚本会隐式再加一次 `tnas`（改进版）并为每个 LLM 生成独立 `tnas_*` 结果。
-- 若启用 `--llm-runs`，TNAS 变体会产出 `timeseries_tnas_<provider>_<model>.csv`（文件名会自动做安全化）
-- 当前的 `tnas` 默认使用 RealScore-driven 版本（即上面提到的“改进后的 TNAS”）；如需切回 proxy score 排序，可将 `ExperimentConfig.tnas_use_real_score` 设为 `false`（目前需通过修改代码中的配置默认值实现）。
-- 为减少干扰，critic 在置信度不足时会回退到近似比例分配（见 `tnas_confidence_threshold`）；这可避免某些 slot 中 abrupt 的 UE1/UE2 变化。
+If a selected online provider is missing either key or base URL, the runner will fall back to the local `stub` client so that the experiment pipeline remains executable.
 
-## TNAS 方法（Top-N Action Sampling）
+如果选择在线 provider 但缺少 key 或 base URL，程序会自动退化到本地 `stub` 客户端，保证实验流程仍可跑通。
 
-`tnas` 的核心思路是“**大模型提案 + 本地可控重排序**”：让 LLM 先给出一组多样候选动作，再用本地评分器选择要执行的动作，避免把最终决策完全交给 LLM。
+## Outputs
 
-流程（每个重配置 slot）：
-- **观测构造**：用最近窗口的实测吞吐（`mean/last hat_sigma`）、当前需求 `sigma1/2`、当前 PRB 等构造 prompt（`ran_llm_xapp/policies/tnas.py`、`ran_llm_xapp/prompts.py`）。
-- **LLM 生成候选**：输出 Top‑N 个 `(a1,a2)`（动作范围 `[1,128]`），解析失败会触发一次修复提示，仍失败则回退到近似比例分配（`ran_llm_xapp/policies/tnas.py`）。
-- **动作映射与选择**：将 `(a1,a2)` 按论文式(7)映射到 `(prb1,prb2)` 并做超预算修正（`ran_llm_xapp/metrics.py:action_to_prbs`），再用本地评分选择最终动作。
+Each experiment writes results to the directory specified by `--out`.
 
-本地评分/重排序有两种模式（默认启用 RealScore）：
-- **RealScore-driven（默认）**：用轻量 critic 在线学习 `V_k_soft` 的真实反馈并对候选打分（`RealScoreCritic`），兼顾探索（`tnas_real_score_explore`）与回退（`tnas_confidence_threshold`）。
-- **Proxy score（可选）**：用确定性 proxy 评分函数直接对候选打分（`ran_llm_xapp/metrics.py:score_allocation_proxy`）。
+每次实验会将结果写入 `--out` 指定目录。
 
-常用配置项（见 `ran_llm_xapp/config.py`）：
-- `tnas_top_n`：每次重配置参与比较的候选数量
-- `llm_max_tokens` / `llm_parse_retry`：减少 JSON 截断与解析失败
-- `tnas_use_real_score` / `tnas_real_score_lr` / `tnas_real_score_explore` / `tnas_confidence_threshold`：RealScore 模式相关
+Typical outputs include:
 
-LLM 缓存目录（避免重复计费）可通过 `--cache-dir` 指定；同 prompt 命中缓存会直接复用 response。
+- `timeseries_<method>.csv`: per-time-step PRB, throughput, utility, outage, reliability, and soft-score traces.
+- `timeseries_tnas_<provider>_<model>.csv`: additional files for multi-model TNAS runs.
+- `fig4_<method>.png` and `.pdf`: per-method time-series figures.
+- `fig4.png` and `.pdf`: combined comparison figure.
+- `fig5a_sys_utility.png`: smoothed system utility.
+- `fig5b_sys_reliability_severity.png`: severity-weighted system reliability.
+- `fig5c_avg_utility.png`: time-averaged utility.
+- `fig5d_avg_reliability_severity.png`: time-averaged severity-weighted reliability.
+- `config_used.yaml` or `config_used.json`: the exact configuration used for the run.
 
-## 配置 OpenAI / DeepSeek / Google Key
-
-推荐使用 `.env`（更方便且不会污染全局 shell 环境）：
-1) 在项目根目录编辑 `.env`，填写：
-   - `OPENAI_API_KEY=...`
-   - `OPENAI_BASE_URL=...`（必填，本项目不会使用默认 URL）
-   - `DEEPSEEK_API_KEY=...`
-   - `DEEPSEEK_BASE_URL=...`（必填，本项目不会使用默认 URL）
-   - `GOOGLE_API_KEY=...`
-   - `GOOGLE_BASE_URL=...`（必填，本项目不会使用默认 URL）
-
-程序启动时会自动加载项目根目录或当前目录下的 `.env`（不会覆盖已存在的系统环境变量）。
-
-例如：
-```bash
-export OPENAI_API_KEY="..."
-export DEEPSEEK_API_KEY="..."
-export GOOGLE_API_KEY="..."
-```
-
-无 key 或 base_url 时仍可运行：若你选择 `--provider openai|deepseek|google` 但未提供对应的 key/base_url，程序会提示并自动退化到 `stub`（启发式 LLM），保证可跑通并出图。
-
-## 输出文件说明
-
-每次运行输出到 `--out` 指定目录，至少包含：
-- `timeseries_<method>.csv`：包含 `t, method, prb1, prb2, sigma1, sigma2, eff_cap1, eff_cap2, shortfall1, shortfall2, prb2_min_est, waste, penalty, V_k_soft, hat_sigma1, hat_sigma2, u1, u2`
-  - legacy：`theta1, theta2, sys_theta`（这里的 `θ` 是 **outage fraction**，越小越好；保留用于兼容）
-  - 推荐使用：`outage_theta1, outage_theta2, system_outage_theta, reliability1, reliability2, system_reliability`，且满足 `reliability = 1 - outage_theta`
-  - 当使用 `--llm-runs` 跑多个 TNAS 变体时，会额外生成 `timeseries_tnas_<provider>_<model>.csv`
-- 图4：
-  - 每个方法/变体都会单独输出 `fig4_<method>.png`
-  - 额外输出 `fig4.png`：把本次运行产生的所有方法/变体放到**同一张组合图**（支持多个 TNAS 变体，子图数量会随之增加）
-  - 注：图4/图5 的图片默认会同时保存 `.png` 与同名 `.pdf`
-- 图5：
-  - `fig5a_sys_utility.png`
-  - `fig5b_sys_reliability_severity.png`（severity-weighted：基于 shortfall 幅度与 outage θ 的加权可靠性）
-  - `fig5c_avg_utility.png`
-  - `fig5d_avg_reliability_severity.png`（severity-weighted：UE1/UE2/System reliability 的时间平均）
-- `config_used.yaml`（若未安装 PyYAML 则为 `config_used.json`）
-
-## 时间线与 system 指标
-
-- **时间线**（默认配置对齐论文图4叙述）：
-  - `t∈[0,100)`：未启用 slicing 控制的默认阶段，固定 PRB 分配（默认 `prb1=96, prb2=32`）→ UE1≈30 Mbps、UE2≈10 Mbps
-  - `t∈[100,200)`：slice init + 初始化均分阶段，固定 `prb1=prb2=64` → UE1≈20 Mbps、UE2≈10 Mbps
-  - `t≥200`：方法策略生效并进入对比阶段；同时启用 **demand schedule**（默认：`sigma1` 在 `t=200` 变为 35、在 `t=400` 变为 45；`sigma2` 保持 10），用于制造 “可行→不可行” 的切换与 trade-off
-- **system 指标聚合方式**：
-  - `system_utility(t)`：按 β 权重加权平均，默认 `w1 = beta1 / (beta1 + beta2)`
-  - `system_outage_theta(t) = mean(outage_theta1(t), outage_theta2(t))`（简单平均）
-  - `system_reliability(t) = 1 - system_outage_theta(t)`
-- **soft score（V_k_soft）**：在论文 Eq.(8) 的 `V_k` 基础上加入短缺惩罚（默认 `t>=200` 启用）：
-  - `eff_cap_s = min(sigma_s, cap_s_hard)`（`cap_s_hard=None` 视为 +inf）
-  - `shortfall_s = max(0, eff_cap_s - mean_hat_sigma_s)`
-  - `V_k_soft = V_k - lambda1*shortfall1^p - lambda2*shortfall2^p`（默认 `p=2, lambda1=6, lambda2=1`）
-- **outage θ（违约占比）**：按论文定义为滑窗内 `u_s^τ <= u_th_s` 的比例（范围[0,1]，越小越好；详见 `ran_llm_xapp/metrics.py`）。
-- **reliability（对外展示）**：`reliability = 1 - outage_theta`（范围[0,1]，越大越好）。图5b/5d 默认画的是 reliability。
-- 图5 的 time-averaged 统计默认在 **t ∈ [baseline_start_time, T_end]** 上计算（强调 t=200 后策略差异）。
-
-## 运行测试
+## Testing
 
 ```bash
 python3 -m unittest discover -s tests -p "test_*.py"
 ```
+
+## Notes on Reproducibility
+
+**English.** This codebase is intended to make the research logic explicit: random seeds are controlled, LLM responses can be cached, and the local `stub` client enables zero-cost deterministic smoke tests. For real LLM experiments, use `--cache-dir` to avoid repeated API calls for identical prompts.
+
+**中文。** 本项目强调实验逻辑透明：随机种子可控，LLM response 可缓存，本地 `stub` 客户端可用于零成本确定性 smoke test。使用真实 LLM 时，建议通过 `--cache-dir` 缓存相同 prompt 的结果，避免重复调用 API。
+
+## Citation
+
+If you use this repository in academic work, please cite the paper:
+
+```bibtex
+@inproceedings{llm_xapp_2026,
+  title     = {LLM-xApp: A Large Language Model Empowered Radio Resource Management xApp for 5G O-RAN},
+  booktitle = {IEEE INFOCOM Workshop},
+  year      = {2026},
+  note      = {Accepted}
+}
+```
+
+正式出版信息公布后，建议将 BibTeX 条目更新为会议官方版本。
